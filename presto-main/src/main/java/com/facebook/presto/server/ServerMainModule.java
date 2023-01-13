@@ -206,6 +206,7 @@ import com.facebook.presto.util.FinalizerService;
 import com.facebook.presto.util.GcStatusMonitor;
 import com.facebook.presto.version.EmbedVersion;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.inject.Binder;
@@ -407,6 +408,8 @@ public class ServerMainModule
 
         newOptionalBinder(binder, ClusterMemoryManagerService.class);
         newOptionalBinder(binder, ClusterQueryTrackerService.class);
+        Predicate<ServerConfig> isRMEnabled = ServerConfig::isResourceManagerEnabled;
+        Predicate<ServerConfig> isGlobalRMEnabled = ServerConfig::isGlobalResourceGroupEnabled;
         install(installModuleIf(
                 ServerConfig.class,
                 ServerConfig::isResourceManagerEnabled,
@@ -417,7 +420,7 @@ public class ServerMainModule
                     {
                         configBinder(moduleBinder).bindConfig(ResourceManagerConfig.class);
                         moduleBinder.bind(ClusterStatusSender.class).to(ResourceManagerClusterStatusSender.class).in(Scopes.SINGLETON);
-                        if (serverConfig.isCoordinator()) {
+                        if (serverConfig.isCoordinator() || (serverConfig.isGlobalResourceGroupEnabled() && serverConfig.isResourceManager()) ) {
                             moduleBinder.bind(ClusterMemoryManagerService.class).in(Scopes.SINGLETON);
                             moduleBinder.bind(ClusterQueryTrackerService.class).in(Scopes.SINGLETON);
                             moduleBinder.bind(ResourceGroupService.class).to(ResourceManagerResourceGroupService.class).in(Scopes.SINGLETON);

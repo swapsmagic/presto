@@ -34,6 +34,8 @@ public class ServerConfig
     private boolean enhancedErrorReporting = true;
     private boolean queryResultsCompressionEnabled = true;
 
+    private boolean globalResourceGroupEnabled = false;
+
     public boolean isResourceManager()
     {
         return resourceManager;
@@ -169,6 +171,18 @@ public class ServerConfig
     public ServerConfig setQueryResultsCompressionEnabled(boolean queryResultsCompressionEnabled)
     {
         this.queryResultsCompressionEnabled = queryResultsCompressionEnabled;
+        return this;
+    }
+
+    public boolean isGlobalResourceGroupEnabled()
+    {
+        return globalResourceGroupEnabled;
+    }
+
+    @Config("global-resource-group-enabled")
+    public ServerConfig setGlobalResourceGroupEnabled(boolean globalResourceGroupEnabled)
+    {
+        this.globalResourceGroupEnabled = globalResourceGroupEnabled;
         return this;
     }
 }

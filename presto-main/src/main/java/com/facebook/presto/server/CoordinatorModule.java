@@ -178,10 +178,14 @@ public class CoordinatorModule
         newExporter(binder).export(QueryManager.class).withGeneratedName();
 
         binder.bind(SessionSupplier.class).to(QuerySessionSupplier.class).in(Scopes.SINGLETON);
-        binder.bind(InternalResourceGroupManager.class).in(Scopes.SINGLETON);
-        newExporter(binder).export(InternalResourceGroupManager.class).withGeneratedName();
-        binder.bind(ResourceGroupManager.class).to(InternalResourceGroupManager.class);
-        binder.bind(LegacyResourceGroupConfigurationManager.class).in(Scopes.SINGLETON);
+
+        ServerConfig serverConfig = buildConfigObject(ServerConfig.class);
+//        if (!serverConfig.isGlobalResourceGroupEnabled()) {
+            binder.bind(InternalResourceGroupManager.class).in(Scopes.SINGLETON);
+            newExporter(binder).export(InternalResourceGroupManager.class).withGeneratedName();
+            binder.bind(ResourceGroupManager.class).to(InternalResourceGroupManager.class);
+            binder.bind(LegacyResourceGroupConfigurationManager.class).in(Scopes.SINGLETON);
+//        }
         binder.bind(RetryCircuitBreaker.class).in(Scopes.SINGLETON);
         newExporter(binder).export(RetryCircuitBreaker.class).withGeneratedName();
 

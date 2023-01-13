@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.server.protocol;
+package com.facebook.presto.resourcemanager;
 
 import com.facebook.airlift.log.Logger;
 import com.facebook.presto.Session;
@@ -23,7 +23,6 @@ import com.facebook.presto.client.StatementStats;
 import com.facebook.presto.common.ErrorCode;
 import com.facebook.presto.common.Page;
 import com.facebook.presto.common.block.BlockEncodingSerde;
-import com.facebook.presto.common.transaction.TransactionId;
 import com.facebook.presto.common.type.BooleanType;
 import com.facebook.presto.common.type.StandardTypes;
 import com.facebook.presto.common.type.Type;
@@ -34,6 +33,8 @@ import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.execution.StageInfo;
 import com.facebook.presto.execution.buffer.PagesSerdeFactory;
 import com.facebook.presto.operator.ExchangeClient;
+import com.facebook.presto.server.protocol.RetryCircuitBreaker;
+import com.facebook.presto.server.protocol.RowIterable;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.function.SqlFunctionId;
 import com.facebook.presto.spi.function.SqlInvokedFunction;
@@ -41,6 +42,7 @@ import com.facebook.presto.spi.page.PagesSerde;
 import com.facebook.presto.spi.page.SerializedPage;
 import com.facebook.presto.spi.security.SelectedRole;
 import com.facebook.presto.spi.tracing.Tracer;
+import com.facebook.presto.transaction.TransactionId;
 import com.facebook.presto.transaction.TransactionInfo;
 import com.facebook.presto.transaction.TransactionManager;
 import com.google.common.collect.ImmutableList;
@@ -91,7 +93,6 @@ import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 @ThreadSafe
-public
 class Query
 {
     private static final Logger log = Logger.get(Query.class);

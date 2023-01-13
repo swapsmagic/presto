@@ -11,7 +11,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.server.protocol;
+
+package com.facebook.presto.resourcemanager;
 
 import com.facebook.airlift.log.Logger;
 import com.facebook.airlift.stats.TimeStat;
@@ -28,6 +29,9 @@ import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.server.HttpRequestSessionContext;
 import com.facebook.presto.server.ServerConfig;
 import com.facebook.presto.server.SessionContext;
+import com.facebook.presto.server.protocol.LocalQueryProvider;
+import com.facebook.presto.server.protocol.QueryBlockingRateLimiter;
+import com.facebook.presto.server.protocol.QueryResourceUtil;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.sql.parser.SqlParserOptions;
@@ -389,7 +393,7 @@ public class QueuedStatementResource
         return isNullOrEmpty(xForwardedProto) ? uriInfo.getRequestUri().getScheme() : xForwardedProto;
     }
 
-    public static QueryResults createQueryResults(
+    private static QueryResults createQueryResults(
             QueryId queryId,
             URI nextUri,
             Optional<QueryError> queryError,
@@ -660,3 +664,4 @@ public class QueuedStatementResource
         }
     }
 }
+

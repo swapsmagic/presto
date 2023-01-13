@@ -104,6 +104,7 @@ public final class InternalResourceGroupManager<C>
     private final double concurrencyThreshold;
     private final Duration resourceGroupRuntimeInfoRefreshInterval;
     private final boolean isResourceManagerEnabled;
+    private final boolean isGlobalResourceManagerEnabled;
 
     @Inject
     public InternalResourceGroupManager(
@@ -125,6 +126,7 @@ public final class InternalResourceGroupManager<C>
         this.concurrencyThreshold = queryManagerConfig.getConcurrencyThresholdToEnableResourceGroupRefresh();
         this.resourceGroupRuntimeInfoRefreshInterval = queryManagerConfig.getResourceGroupRunTimeInfoRefreshInterval();
         this.isResourceManagerEnabled = requireNonNull(serverConfig, "serverConfig is null").isResourceManagerEnabled();
+        this.isGlobalResourceManagerEnabled = serverConfig.isGlobalResourceGroupEnabled();
         this.resourceGroupRuntimeExecutor = new PeriodicTaskExecutor(resourceGroupRuntimeInfoRefreshInterval.toMillis(), refreshExecutor, this::refreshResourceGroupRuntimeInfo);
     }
 
@@ -227,7 +229,7 @@ public final class InternalResourceGroupManager<C>
                     throw t;
                 }
             }, 1, 1, MILLISECONDS);
-            if (isResourceManagerEnabled) {
+            if (isResourceManagerEnabled && !isGlobalResourceManagerEnabled) {
                 resourceGroupRuntimeExecutor.start();
             }
         }
@@ -395,6 +397,8 @@ public final class InternalResourceGroupManager<C>
         if (resourceGroupRuntimeInfo != null) {
             totalRunningQueries += resourceGroupRuntimeInfo.getRunningQueries() + resourceGroupRuntimeInfo.getDescendantRunningQueries();
         }
+        boolean result1 = lastUpdatedResourceGroupRuntimeInfo.getAsLong() <= resourceGroup.getLastRunningQueryStartTime();
+        boolean result2 = totalRunningQueries >= (hardConcurrencyLimit * concurrencyThreshold);
         return totalRunningQueries >= (hardConcurrencyLimit * concurrencyThreshold) && lastUpdatedResourceGroupRuntimeInfo.getAsLong() <= resourceGroup.getLastRunningQueryStartTime();
     }
 

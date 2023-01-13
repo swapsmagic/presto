@@ -19,9 +19,18 @@ import com.facebook.presto.dispatcher.NoOpQueryManager;
 import com.facebook.presto.execution.QueryIdGenerator;
 import com.facebook.presto.execution.QueryInfo;
 import com.facebook.presto.execution.QueryManager;
+import com.facebook.presto.execution.resourceGroups.InternalResourceGroupManager;
+import com.facebook.presto.execution.resourceGroups.LegacyResourceGroupConfigurationManager;
 import com.facebook.presto.execution.resourceGroups.NoOpResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.failureDetector.FailureDetectorModule;
+import com.facebook.presto.memory.ClusterMemoryManager;
+import com.facebook.presto.memory.ForMemoryManager;
+import com.facebook.presto.memory.LowMemoryKiller;
+import com.facebook.presto.memory.MemoryManagerConfig;
+import com.facebook.presto.memory.NoneLowMemoryKiller;
+import com.facebook.presto.memory.TotalReservationLowMemoryKiller;
+import com.facebook.presto.memory.TotalReservationOnBlockedNodesLowMemoryKiller;
 import com.facebook.presto.resourcemanager.DistributedClusterStatsResource;
 import com.facebook.presto.resourcemanager.DistributedQueryInfoResource;
 import com.facebook.presto.resourcemanager.DistributedQueryResource;
@@ -33,6 +42,7 @@ import com.facebook.presto.resourcemanager.RatisServer;
 import com.facebook.presto.resourcemanager.ResourceManagerClusterStateProvider;
 import com.facebook.presto.resourcemanager.ResourceManagerProxy;
 import com.facebook.presto.resourcemanager.ResourceManagerServer;
+import com.facebook.presto.spi.memory.ClusterMemoryPoolManager;
 import com.facebook.presto.transaction.NoOpTransactionManager;
 import com.facebook.presto.transaction.TransactionManager;
 import com.google.inject.Binder;
@@ -51,6 +61,8 @@ import static com.facebook.airlift.json.JsonBinder.jsonBinder;
 import static com.facebook.airlift.json.JsonCodecBinder.jsonCodecBinder;
 import static com.facebook.airlift.json.smile.SmileCodecBinder.smileCodecBinder;
 import static com.facebook.drift.server.guice.DriftServerBinder.driftServerBinder;
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.weakref.jmx.guice.ExportBinder.newExporter;
 
 public class ResourceManagerModule
         extends AbstractConfigurationAwareModule
@@ -83,8 +95,6 @@ public class ResourceManagerModule
 
         binder.bind(SessionSupplier.class).to(QuerySessionSupplier.class).in(Scopes.SINGLETON);
 
-        binder.bind(ResourceGroupManager.class).to(NoOpResourceGroupManager.class);
-
         jsonCodecBinder(binder).bindJsonCodec(QueryInfo.class);
         smileCodecBinder(binder).bindSmileCodec(QueryInfo.class);
         jsonCodecBinder(binder).bindJsonCodec(BasicQueryInfo.class);
@@ -113,6 +123,38 @@ public class ResourceManagerModule
         if (raftConfig.isEnabled()) {
             binder.bind(RatisServer.class).in(Scopes.SINGLETON);
         }
+
+        ServerConfig serverConfig = buildConfigObject(ServerConfig.class);
+        if (serverConfig.isGlobalResourceGroupEnabled()) {
+            binder.bind(InternalResourceGroupManager.class).in(Scopes.SINGLETON);
+            newExporter(binder).export(InternalResourceGroupManager.class).withGeneratedName();
+            binder.bind(ResourceGroupManager.class).to(InternalResourceGroupManager.class);
+            binder.bind(LegacyResourceGroupConfigurationManager.class).in(Scopes.SINGLETON);
+
+            binder.bind(ClusterMemoryManager.class).in(Scopes.SINGLETON);
+            binder.bind(ClusterMemoryPoolManager.class).to(ClusterMemoryManager.class).in(Scopes.SINGLETON);
+
+            httpClientBinder(binder).bindHttpClient("memoryManager", ForMemoryManager.class)
+                    .withTracing()
+                    .withConfigDefaults(config -> {
+                        config.setRequestTimeout(new Duration(10, SECONDS));
+                    });
+            bindLowMemoryKiller(MemoryManagerConfig.LowMemoryKillerPolicy.NONE, NoneLowMemoryKiller.class);
+            bindLowMemoryKiller(MemoryManagerConfig.LowMemoryKillerPolicy.TOTAL_RESERVATION, TotalReservationLowMemoryKiller.class);
+            bindLowMemoryKiller(MemoryManagerConfig.LowMemoryKillerPolicy.TOTAL_RESERVATION_ON_BLOCKED_NODES, TotalReservationOnBlockedNodesLowMemoryKiller.class);
+            newExporter(binder).export(ClusterMemoryManager.class).withGeneratedName();
+        }
+        else {
+            binder.bind(ResourceGroupManager.class).to(NoOpResourceGroupManager.class);
+        }
+    }
+
+    private void bindLowMemoryKiller(String name, Class<? extends LowMemoryKiller> clazz)
+    {
+        install(installModuleIf(
+                MemoryManagerConfig.class,
+                config -> name.equals(config.getLowMemoryKillerPolicy()),
+                binder -> binder.bind(LowMemoryKiller.class).to(clazz).in(Scopes.SINGLETON)));
     }
 
     @Provides
