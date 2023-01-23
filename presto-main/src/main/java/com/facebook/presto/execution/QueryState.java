@@ -33,6 +33,10 @@ public enum QueryState
      */
     QUEUED(false, 2),
     /**
+     * Query is dispatched to coordinator from RM
+     */
+    DISPATCHED(true, 11),
+    /**
      * Query is waiting for the required resources (beta).
      */
     WAITING_FOR_RESOURCES(false, 3),

@@ -23,6 +23,7 @@ import com.facebook.presto.common.ErrorCode;
 import com.facebook.presto.dispatcher.DispatchExecutor;
 import com.facebook.presto.dispatcher.DispatchInfo;
 import com.facebook.presto.dispatcher.DispatchManager;
+import com.facebook.presto.dispatcher.RMDispatchManager;
 import com.facebook.presto.execution.ExecutionFailureInfo;
 import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.metadata.SessionPropertyManager;
@@ -117,7 +118,7 @@ public class QueuedStatementResource
     private static final Ordering<Comparable<Duration>> WAIT_ORDERING = Ordering.natural().nullsLast();
     private static final Duration NO_DURATION = new Duration(0, MILLISECONDS);
 
-    private final DispatchManager dispatchManager;
+    private final RMDispatchManager dispatchManager;
     private final LocalQueryProvider queryResultsProvider;
 
     private final Executor responseExecutor;
@@ -137,7 +138,7 @@ public class QueuedStatementResource
 
     @Inject
     public QueuedStatementResource(
-            DispatchManager dispatchManager,
+            RMDispatchManager dispatchManager,
             DispatchExecutor executor,
             LocalQueryProvider queryResultsProvider,
             SqlParserOptions sqlParserOptions,
@@ -446,7 +447,7 @@ public class QueuedStatementResource
     {
         private final String query;
         private final SessionContext sessionContext;
-        private final DispatchManager dispatchManager;
+        private final RMDispatchManager dispatchManager;
         private final LocalQueryProvider queryProvider;
         private final QueryId queryId;
         private final String slug = "x" + randomUUID().toString().toLowerCase(ENGLISH).replace("-", "");
@@ -456,7 +457,7 @@ public class QueuedStatementResource
         @GuardedBy("this")
         private ListenableFuture<?> querySubmissionFuture;
 
-        public Query(String query, SessionContext sessionContext, DispatchManager dispatchManager, LocalQueryProvider queryResultsProvider, int retryCount)
+        public Query(String query, SessionContext sessionContext, RMDispatchManager dispatchManager, LocalQueryProvider queryResultsProvider, int retryCount)
         {
             this.query = requireNonNull(query, "query is null");
             this.sessionContext = requireNonNull(sessionContext, "sessionContext is null");

@@ -15,14 +15,35 @@ package com.facebook.presto.server;
 
 import com.facebook.airlift.configuration.AbstractConfigurationAwareModule;
 import com.facebook.airlift.discovery.server.EmbeddedDiscoveryModule;
+import com.facebook.presto.common.resourceGroups.QueryType;
+import com.facebook.presto.cost.CostCalculator;
+import com.facebook.presto.cost.CostCalculatorUsingExchanges;
+import com.facebook.presto.cost.CostCalculatorWithEstimatedExchanges;
+import com.facebook.presto.cost.CostComparator;
+import com.facebook.presto.cost.TaskCountEstimator;
+import com.facebook.presto.dispatcher.DispatchExecutor;
+import com.facebook.presto.dispatcher.DispatchQueryFactory;
+import com.facebook.presto.dispatcher.FailedDispatchQueryFactory;
 import com.facebook.presto.dispatcher.NoOpQueryManager;
+import com.facebook.presto.dispatcher.RMDispatchManager;
+import com.facebook.presto.dispatcher.RMDispatchQueryFactory;
+import com.facebook.presto.event.QueryMonitor;
+import com.facebook.presto.event.QueryMonitorConfig;
+import com.facebook.presto.execution.ClusterSizeMonitor;
+import com.facebook.presto.execution.ForQueryExecution;
+import com.facebook.presto.execution.NodeResourceStatusConfig;
+import com.facebook.presto.execution.QueryExecution;
+import com.facebook.presto.execution.QueryExecutionMBean;
 import com.facebook.presto.execution.QueryIdGenerator;
 import com.facebook.presto.execution.QueryInfo;
 import com.facebook.presto.execution.QueryManager;
+import com.facebook.presto.execution.SqlQueryExecution;
 import com.facebook.presto.execution.resourceGroups.InternalResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.LegacyResourceGroupConfigurationManager;
 import com.facebook.presto.execution.resourceGroups.NoOpResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
+import com.facebook.presto.execution.scheduler.SectionExecutionFactory;
+import com.facebook.presto.execution.scheduler.SplitSchedulerStats;
 import com.facebook.presto.failureDetector.FailureDetectorModule;
 import com.facebook.presto.memory.ClusterMemoryManager;
 import com.facebook.presto.memory.ForMemoryManager;
@@ -31,6 +52,7 @@ import com.facebook.presto.memory.MemoryManagerConfig;
 import com.facebook.presto.memory.NoneLowMemoryKiller;
 import com.facebook.presto.memory.TotalReservationLowMemoryKiller;
 import com.facebook.presto.memory.TotalReservationOnBlockedNodesLowMemoryKiller;
+import com.facebook.presto.operator.OperatorInfo;
 import com.facebook.presto.resourcemanager.DistributedClusterStatsResource;
 import com.facebook.presto.resourcemanager.DistributedQueryInfoResource;
 import com.facebook.presto.resourcemanager.DistributedQueryResource;
@@ -48,12 +70,18 @@ import com.facebook.presto.transaction.TransactionManager;
 import com.google.inject.Binder;
 import com.google.inject.Provides;
 import com.google.inject.Scopes;
+import com.google.inject.TypeLiteral;
+import com.google.inject.multibindings.MapBinder;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 
 import javax.inject.Singleton;
 
+import java.util.concurrent.ExecutorService;
+
+import static com.facebook.airlift.concurrent.Threads.threadsNamed;
 import static com.facebook.airlift.configuration.ConditionalModule.installModuleIf;
+import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
 import static com.facebook.airlift.discovery.client.DiscoveryBinder.discoveryBinder;
 import static com.facebook.airlift.http.client.HttpClientBinder.httpClientBinder;
 import static com.facebook.airlift.jaxrs.JaxrsBinder.jaxrsBinder;
@@ -61,7 +89,10 @@ import static com.facebook.airlift.json.JsonBinder.jsonBinder;
 import static com.facebook.airlift.json.JsonCodecBinder.jsonCodecBinder;
 import static com.facebook.airlift.json.smile.SmileCodecBinder.smileCodecBinder;
 import static com.facebook.drift.server.guice.DriftServerBinder.driftServerBinder;
+import static com.google.inject.multibindings.MapBinder.newMapBinder;
+import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.weakref.jmx.ObjectNames.generatedNameOf;
 import static org.weakref.jmx.guice.ExportBinder.newExporter;
 
 public class ResourceManagerModule
@@ -143,6 +174,25 @@ public class ResourceManagerModule
             bindLowMemoryKiller(MemoryManagerConfig.LowMemoryKillerPolicy.TOTAL_RESERVATION, TotalReservationLowMemoryKiller.class);
             bindLowMemoryKiller(MemoryManagerConfig.LowMemoryKillerPolicy.TOTAL_RESERVATION_ON_BLOCKED_NODES, TotalReservationOnBlockedNodesLowMemoryKiller.class);
             newExporter(binder).export(ClusterMemoryManager.class).withGeneratedName();
+
+            // dispatcher
+            binder.bind(RMDispatchManager.class).in(Scopes.SINGLETON);
+            binder.bind(FailedDispatchQueryFactory.class).in(Scopes.SINGLETON);
+            binder.bind(DispatchExecutor.class).in(Scopes.SINGLETON);
+            newExporter(binder).export(DispatchExecutor.class).withGeneratedName();
+
+            // RM dispatcher
+            binder.bind(DispatchQueryFactory.class).to(RMDispatchQueryFactory.class);
+
+            // query monitor
+            jsonCodecBinder(binder).bindJsonCodec(OperatorInfo.class);
+            configBinder(binder).bindConfig(QueryMonitorConfig.class);
+            binder.bind(QueryMonitor.class).in(Scopes.SINGLETON);
+
+            // node monitor
+            binder.bind(ClusterSizeMonitor.class).in(Scopes.SINGLETON);
+
+            configBinder(binder).bindConfig(NodeResourceStatusConfig.class);
         }
         else {
             binder.bind(ResourceGroupManager.class).to(NoOpResourceGroupManager.class);

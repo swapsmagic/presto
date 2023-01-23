@@ -36,6 +36,7 @@ import com.facebook.presto.connector.ConnectorManager;
 import com.facebook.presto.cost.StatsCalculator;
 import com.facebook.presto.dispatcher.DispatchManager;
 import com.facebook.presto.dispatcher.QueryPrerequisitesManagerModule;
+import com.facebook.presto.dispatcher.RMDispatchManager;
 import com.facebook.presto.eventlistener.EventListenerManager;
 import com.facebook.presto.execution.QueryInfo;
 import com.facebook.presto.execution.QueryManager;
@@ -160,6 +161,7 @@ public class TestingPrestoServer
     private final ServiceSelectorManager serviceSelectorManager;
     private final Announcer announcer;
     private final DispatchManager dispatchManager;
+    private final RMDispatchManager rmDispatchManager;
     private final QueryManager queryManager;
     private final TaskManager taskManager;
     private final GracefulShutdownHandler gracefulShutdownHandler;
@@ -238,6 +240,7 @@ public class TestingPrestoServer
                 false,
                 false,
                 false,
+                false,
                 coordinator,
                 properties,
                 environment,
@@ -250,6 +253,7 @@ public class TestingPrestoServer
     public TestingPrestoServer(
             boolean resourceManager,
             boolean resourceManagerEnabled,
+            boolean globalResourceGroupEnabled,
             boolean catalogServer,
             boolean catalogServerEnabled,
             boolean coordinator,
@@ -275,7 +279,7 @@ public class TestingPrestoServer
             coordinatorPort = "0";
         }
 
-        Map<String, String> serverProperties = getServerProperties(resourceManagerEnabled, catalogServerEnabled, properties, environment, discoveryUri);
+        Map<String, String> serverProperties = getServerProperties(resourceManagerEnabled, catalogServerEnabled, globalResourceGroupEnabled, properties, environment, discoveryUri);
 
         ImmutableList.Builder<Module> modules = ImmutableList.<Module>builder()
                 .add(new TestingNodeModule(Optional.ofNullable(environment)))
@@ -356,6 +360,7 @@ public class TestingPrestoServer
         pageSourceManager = injector.getInstance(PageSourceManager.class);
         if (coordinator) {
             dispatchManager = injector.getInstance(DispatchManager.class);
+            rmDispatchManager = null;
             queryManager = injector.getInstance(QueryManager.class);
             ResourceGroupManager<?> resourceGroupManager = injector.getInstance(ResourceGroupManager.class);
             this.resourceGroupManager = resourceGroupManager instanceof InternalResourceGroupManager
@@ -370,8 +375,21 @@ public class TestingPrestoServer
         }
         else if (resourceManager) {
             dispatchManager = null;
-            queryManager = injector.getInstance(QueryManager.class);
-            resourceGroupManager = Optional.empty();
+            if(globalResourceGroupEnabled)
+            {
+                rmDispatchManager = injector.getInstance(RMDispatchManager.class);
+                queryManager = injector.getInstance(QueryManager.class);
+                ResourceGroupManager<?> resourceGroupManager = injector.getInstance(ResourceGroupManager.class);
+                this.resourceGroupManager = resourceGroupManager instanceof InternalResourceGroupManager
+                        ? Optional.of((InternalResourceGroupManager<?>) resourceGroupManager)
+                        : Optional.empty();
+            }
+            else {
+                rmDispatchManager = null;
+                queryManager = null;
+                resourceGroupManager = Optional.empty();
+            }
+
             nodePartitioningManager = injector.getInstance(NodePartitioningManager.class);
             planOptimizerManager = injector.getInstance(ConnectorPlanOptimizerManager.class);
             clusterMemoryManager = null;
@@ -381,6 +399,7 @@ public class TestingPrestoServer
         }
         else if (catalogServer) {
             dispatchManager = null;
+            rmDispatchManager = null;
             queryManager = null;
             resourceGroupManager = Optional.empty();
             nodePartitioningManager = null;
@@ -392,6 +411,7 @@ public class TestingPrestoServer
         }
         else {
             dispatchManager = null;
+            rmDispatchManager = null;
             queryManager = null;
             resourceGroupManager = Optional.empty();
             nodePartitioningManager = null;
@@ -424,6 +444,7 @@ public class TestingPrestoServer
     private Map<String, String> getServerProperties(
             boolean resourceManagerEnabled,
             boolean catalogServerEnabled,
+            boolean globalResourceManagerEnabled,
             Map<String, String> properties,
             String environment,
             URI discoveryUri)
@@ -442,6 +463,9 @@ public class TestingPrestoServer
         if (coordinator || resourceManager || catalogServer) {
             // enabling failure detector in tests can make them flakey
             serverProperties.put("failure-detector.enabled", "false");
+            if (globalResourceManagerEnabled) {
+                serverProperties.put("global-resource-group-enabled", "true");
+            }
         }
 
         if (discoveryUri != null) {
@@ -481,6 +505,11 @@ public class TestingPrestoServer
     public DispatchManager getDispatchManager()
     {
         return dispatchManager;
+    }
+
+    public RMDispatchManager getRMDispatchManager()
+    {
+        return rmDispatchManager;
     }
 
     public QueryManager getQueryManager()

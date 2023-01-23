@@ -134,6 +134,7 @@ public class DistributedQueryRunner
         this(
                 false,
                 false,
+                false,
                 defaultSession,
                 nodeCount,
                 1,
@@ -157,6 +158,7 @@ public class DistributedQueryRunner
     private DistributedQueryRunner(
             boolean resourceManagerEnabled,
             boolean catalogServerEnabled,
+            boolean globalResourceGroupEnabled,
             Session defaultSession,
             int nodeCount,
             int coordinatorCount,
@@ -213,6 +215,7 @@ public class DistributedQueryRunner
                                     discoveryUrl,
                                     false,
                                     resourceManagerEnabled,
+                                    globalResourceGroupEnabled,
                                     false,
                                     catalogServerEnabled,
                                     false,
@@ -240,6 +243,7 @@ public class DistributedQueryRunner
                             discoveryUrl,
                             true,
                             true,
+                            globalResourceGroupEnabled,
                             false,
                             false,
                             false,
@@ -258,6 +262,7 @@ public class DistributedQueryRunner
                         discoveryUrl,
                         false,
                         false,
+                        globalResourceGroupEnabled,
                         true,
                         true,
                         false,
@@ -274,6 +279,7 @@ public class DistributedQueryRunner
                         discoveryUrl,
                         false,
                         resourceManagerEnabled,
+                        globalResourceGroupEnabled,
                         false,
                         catalogServerEnabled,
                         true,
@@ -369,6 +375,7 @@ public class DistributedQueryRunner
             URI discoveryUri,
             boolean resourceManager,
             boolean resourceManagerEnabled,
+            boolean globalResourceGroupEnabled,
             boolean catalogServer,
             boolean catalogServerEnabled,
             boolean coordinator,
@@ -397,6 +404,7 @@ public class DistributedQueryRunner
         TestingPrestoServer server = new TestingPrestoServer(
                 resourceManager,
                 resourceManagerEnabled,
+                globalResourceGroupEnabled,
                 catalogServer,
                 catalogServerEnabled,
                 coordinator,
@@ -871,6 +879,7 @@ public class DistributedQueryRunner
         private Optional<BiFunction<Integer, URI, Process>> externalWorkerLauncher = Optional.empty();
         private boolean resourceManagerEnabled;
         private boolean catalogServerEnabled;
+        private boolean globalResourceGroupEnabled;
         private List<Module> extraModules = ImmutableList.of();
         private int resourceManagerCount = 1;
 
@@ -972,6 +981,12 @@ public class DistributedQueryRunner
             return this;
         }
 
+        public Builder setGlobalResourceGroupEnabled(boolean globalResourceGroupEnabled)
+        {
+            this.globalResourceGroupEnabled = globalResourceGroupEnabled;
+            return this;
+        }
+
         public Builder setCatalogServerEnabled(boolean catalogServerEnabled)
         {
             this.catalogServerEnabled = catalogServerEnabled;
@@ -996,6 +1011,7 @@ public class DistributedQueryRunner
             return new DistributedQueryRunner(
                     resourceManagerEnabled,
                     catalogServerEnabled,
+                    globalResourceGroupEnabled,
                     defaultSession,
                     nodeCount,
                     coordinatorCount,

@@ -148,6 +148,13 @@ class H2TestUtil
         return createQueryRunner(dbConfigUrl, dao, TEST_ENVIRONMENT, coordinatorProperties, coordinatorCount, false, false);
     }
 
+    public static DistributedQueryRunner createQueryRunner(String dbConfigUrl, H2ResourceGroupsDao dao, Map<String, String> coordinatorProperties, int coordinatorCount,
+            Map<String, String> resourceManagerProperties, boolean globalResourceGroupEnabled)
+            throws Exception
+    {
+        return createQueryRunner(dbConfigUrl, dao, TEST_ENVIRONMENT, coordinatorProperties, coordinatorCount, resourceManagerProperties, globalResourceGroupEnabled, false, false);
+    }
+
     public static DistributedQueryRunner createQueryRunner(String dbConfigUrl, H2ResourceGroupsDao dao, Map<String, String> coordinatorProperties, int coordinatorCount, boolean weightedFairSchedulingEnabled, boolean weightedSchedulingEnabled)
             throws Exception
     {
@@ -172,6 +179,41 @@ class H2TestUtil
                 queryRunner.getCoordinator(coordinator).getResourceGroupManager().get()
                         .setConfigurationManager(CONFIGURATION_MANAGER_TYPE, ImmutableMap.of("resource-groups.config-db-url", dbConfigUrl, "node.environment", environment));
             }
+            queryRunner.installPlugin(new TpchPlugin());
+            queryRunner.createCatalog("tpch", "tpch");
+            setup(queryRunner, dao, environment, weightedFairSchedulingEnabled, weightedSchedulingEnabled);
+            queryRunner.waitForClusterToGetReady();
+            return queryRunner;
+        }
+        catch (Exception e) {
+            queryRunner.close();
+            throw e;
+        }
+    }
+
+    public static DistributedQueryRunner createQueryRunner(String dbConfigUrl, H2ResourceGroupsDao dao, String environment, Map<String, String> coordinatorProperties, int coordinatorCount,
+            Map<String, String> resourceManagerProperties, boolean globalResourceGroupEnabled, boolean weightedFairSchedulingEnabled, boolean weightedSchedulingEnabled)
+            throws Exception
+    {
+        DistributedQueryRunner queryRunner = DistributedQueryRunner
+                .builder(testSessionBuilder().setCatalog("tpch").setSchema("tiny").build())
+                .setNodeCount(2)
+                .setCoordinatorCount(coordinatorCount)
+                .setEnvironment(environment)
+                .setResourceManagerEnabled(true)
+                .setGlobalResourceGroupEnabled(globalResourceGroupEnabled)
+                .setCoordinatorProperties(coordinatorProperties)
+                .setResourceManagerProperties(resourceManagerProperties)
+                .build();
+        try {
+            Plugin h2ResourceGroupManagerPlugin = new H2ResourceGroupManagerPlugin();
+            queryRunner.installPlugin(h2ResourceGroupManagerPlugin);
+            for (int coordinator = 0; coordinator < coordinatorCount; coordinator++) {
+                queryRunner.getCoordinator(coordinator).getResourceGroupManager().get()
+                        .setConfigurationManager(CONFIGURATION_MANAGER_TYPE, ImmutableMap.of("resource-groups.config-db-url", dbConfigUrl, "node.environment", environment));
+            }
+            queryRunner.getResourceManager(0).getResourceGroupManager().get()
+                    .setConfigurationManager(CONFIGURATION_MANAGER_TYPE, ImmutableMap.of("resource-groups.config-db-url", dbConfigUrl, "node.environment", environment));
             queryRunner.installPlugin(new TpchPlugin());
             queryRunner.createCatalog("tpch", "tpch");
             setup(queryRunner, dao, environment, weightedFairSchedulingEnabled, weightedSchedulingEnabled);
