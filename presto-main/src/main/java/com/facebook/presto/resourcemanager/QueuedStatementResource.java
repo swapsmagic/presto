@@ -603,6 +603,10 @@ public class QueuedStatementResource
             }
             // If this future completes successfully, the next URI will redirect to the executing statement endpoint.
             // Hence it is safe to hardcode the token to be 0.
+            /*
+                Put New Logic Here
+                If query state changed then return the coordinator URI with ar reset token
+             */
             return transform(
                     query.waitForResults(0, uriInfo, getScheme(xForwardedProto, uriInfo), maxWait, TARGET_RESULT_SIZE),
                     results -> QueryResourceUtil.toResponse(query, results, xPrestoPrefixUrl, compressionEnabled),

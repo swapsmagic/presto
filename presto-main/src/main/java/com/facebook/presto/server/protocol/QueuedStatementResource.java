@@ -223,6 +223,36 @@ public class QueuedStatementResource
         return withCompressionConfiguration(Response.ok(query.getInitialQueryResults(uriInfo, xForwardedProto, xPrestoPrefixUrl)), compressionEnabled).build();
     }
 
+    @POST
+    @Path("/v1/statement/{queryId}")
+    @Produces(APPLICATION_JSON)
+    public Response postStatement(
+            @PathParam("queryId") QueryId queryId,
+            String statement,
+            @HeaderParam(X_FORWARDED_PROTO) String xForwardedProto,
+            @HeaderParam(PRESTO_PREFIX_URL) String xPrestoPrefixUrl,
+            @Context HttpServletRequest servletRequest,
+            @Context UriInfo uriInfo)
+    {
+        if (isNullOrEmpty(statement)) {
+            throw badRequest(BAD_REQUEST, "SQL statement is empty");
+        }
+
+        abortIfPrefixUrlInvalid(xPrestoPrefixUrl);
+
+        // TODO: For future cases we may want to start tracing from client. Then continuation of tracing
+        //       will be needed instead of creating a new trace here.
+        SessionContext sessionContext = new HttpRequestSessionContext(
+                servletRequest,
+                sqlParserOptions,
+                tracerProviderManager.getTracerProvider(),
+                Optional.of(sessionPropertyManager));
+        Query query = new Query(statement, queryId, sessionContext, dispatchManager, queryResultsProvider, 0);
+        queries.put(query.getQueryId(), query);
+
+        return withCompressionConfiguration(Response.ok(query.getInitialQueryResults(uriInfo, xForwardedProto, xPrestoPrefixUrl)), compressionEnabled).build();
+    }
+
     /**
      * HTTP endpoint for re-processing a failed query
      * @param queryId Query Identifier of the query to be retried
@@ -459,6 +489,16 @@ public class QueuedStatementResource
             this.dispatchManager = requireNonNull(dispatchManager, "dispatchManager is null");
             this.queryProvider = requireNonNull(queryResultsProvider, "queryExecutor is null");
             this.queryId = dispatchManager.createQueryId();
+            this.retryCount = retryCount;
+        }
+
+        public Query(String query, QueryId queryId, SessionContext sessionContext, DispatchManager dispatchManager, LocalQueryProvider queryResultsProvider, int retryCount)
+        {
+            this.query = requireNonNull(query, "query is null");
+            this.sessionContext = requireNonNull(sessionContext, "sessionContext is null");
+            this.dispatchManager = requireNonNull(dispatchManager, "dispatchManager is null");
+            this.queryProvider = requireNonNull(queryResultsProvider, "queryExecutor is null");
+            this.queryId = requireNonNull(queryId, "queryId is null");
             this.retryCount = retryCount;
         }
 

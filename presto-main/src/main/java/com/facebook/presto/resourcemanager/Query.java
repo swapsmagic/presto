@@ -42,7 +42,7 @@ import com.facebook.presto.spi.page.PagesSerde;
 import com.facebook.presto.spi.page.SerializedPage;
 import com.facebook.presto.spi.security.SelectedRole;
 import com.facebook.presto.spi.tracing.Tracer;
-import com.facebook.presto.transaction.TransactionId;
+import com.facebook.presto.common.transaction.TransactionId;
 import com.facebook.presto.transaction.TransactionInfo;
 import com.facebook.presto.transaction.TransactionManager;
 import com.google.common.collect.ImmutableList;

@@ -84,7 +84,7 @@ public class TestGlobalQueuesDb
 //
 //        QueryId thirdAdhocQuery = createQuery(queryRunner, 0, adhocSession(), LONG_LASTING_QUERY);
 //
-        waitForQueryState(queryRunner, 0, firstAdhocQuery, RUNNING);
+        waitForQueryState(queryRunner, 0, firstAdhocQuery, QUEUED);
 //        waitForQueryState(queryRunner, 1, secondAdhocQuery, RUNNING);
 //        waitForQueryState(queryRunner, 0, thirdAdhocQuery, RUNNING);
 //

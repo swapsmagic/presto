@@ -28,7 +28,7 @@ import com.facebook.presto.execution.warnings.WarningCollectorFactory;
 import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.resourcemanager.ClusterQueryTrackerService;
 import com.facebook.presto.resourcemanager.ClusterStatusSender;
-import com.facebook.presto.security.AccessControl;
+import com.facebook.presto.spi.security.AccessControl;
 import com.facebook.presto.server.BasicQueryInfo;
 import com.facebook.presto.server.SessionContext;
 import com.facebook.presto.server.SessionPropertyDefaults;

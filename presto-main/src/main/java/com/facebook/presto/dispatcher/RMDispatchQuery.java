@@ -24,6 +24,7 @@ import com.facebook.presto.execution.QueryExecution;
 import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.execution.QueryStateMachine;
 import com.facebook.presto.execution.StateMachine.StateChangeListener;
+import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.server.BasicQueryInfo;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.QueryId;
@@ -77,6 +78,7 @@ public class RMDispatchQuery
 
     private final QueryPrerequisites queryPrerequisites;
     private final WarningCollector warningCollector;
+    private final InternalNodeManager internalNodeManager;
 
     /**
      * Local dispatch query encapsulates QueryExecution and submit to the ResourceGroupManager waiting for resource to get executed.
@@ -100,7 +102,8 @@ public class RMDispatchQuery
             Consumer<DispatchQuery> queryQueuer,
             Consumer<QueryExecution> querySubmitter,
             boolean retry,
-            QueryPrerequisites queryPrerequisites)
+            QueryPrerequisites queryPrerequisites,
+            InternalNodeManager internalNodeManager)
     {
         this.stateMachine = requireNonNull(stateMachine, "stateMachine is null");
         this.queryMonitor = requireNonNull(queryMonitor, "queryMonitor is null");
@@ -112,6 +115,7 @@ public class RMDispatchQuery
         this.retry = retry;
         this.queryPrerequisites = requireNonNull(queryPrerequisites, "queryPrerequisites is null");
         this.warningCollector = requireNonNull(stateMachine.getWarningCollector(), "warningCollector is null");
+        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
 //        addExceptionCallback(queryExecutionFuture, throwable -> {
 //            if (stateMachine.transitionToFailed(throwable)) {
 //                queryMonitor.queryImmediateFailureEvent(stateMachine.getBasicQueryInfo(Optional.empty()), toFailure(throwable));
@@ -239,7 +243,7 @@ public class RMDispatchQuery
             return DispatchInfo.failed(failureInfo, queryInfo.getQueryStats().getElapsedTime(), queryInfo.getQueryStats().getWaitingForPrerequisitesTime(), queryInfo.getQueryStats().getQueuedTime());
         }
         if (dispatched) {
-            return DispatchInfo.dispatched(new LocalCoordinatorLocation(), queryInfo.getQueryStats().getElapsedTime(), queryInfo.getQueryStats().getWaitingForPrerequisitesTime(), queryInfo.getQueryStats().getQueuedTime());
+            return DispatchInfo.dispatched(new RemoteCoordinatorLocation(internalNodeManager), queryInfo.getQueryStats().getElapsedTime(), queryInfo.getQueryStats().getWaitingForPrerequisitesTime(), queryInfo.getQueryStats().getQueuedTime());
         }
         if (queryInfo.getState() == QUEUED) {
             return DispatchInfo.queued(queryInfo.getQueryStats().getElapsedTime(), queryInfo.getQueryStats().getWaitingForPrerequisitesTime(), queryInfo.getQueryStats().getQueuedTime());

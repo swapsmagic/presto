@@ -17,6 +17,8 @@ import com.facebook.airlift.stats.CounterStat;
 import com.facebook.presto.execution.ManagedQueryExecution;
 import com.facebook.presto.execution.SqlQueryExecution;
 import com.facebook.presto.execution.resourceGroups.WeightedFairQueue.Usage;
+import com.facebook.presto.metadata.InternalNode;
+import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.server.QueryStateInfo;
 import com.facebook.presto.server.ResourceGroupInfo;
 import com.facebook.presto.spi.PrestoException;
@@ -156,6 +158,12 @@ public class InternalResourceGroup
     @GuardedBy("root")
     private AtomicBoolean isDirty = new AtomicBoolean();
 
+    @GuardedBy("root")
+    private final InternalNodeManager internalNodeManager;
+
+    @GuardedBy("root")
+    private final boolean isGlobalResourceGroupEnabled;
+
     protected InternalResourceGroup(
             Optional<InternalResourceGroup> parent,
             String name,
@@ -180,6 +188,38 @@ public class InternalResourceGroup
         this.staticResourceGroup = staticResourceGroup;
         this.additionalRuntimeInfo = requireNonNull(additionalRuntimeInfo, "additionalRuntimeInfo is null");
         this.shouldWaitForResourceManagerUpdate = requireNonNull(shouldWaitForResourceManagerUpdate, "shouldWaitForResourceManagerUpdate is null");
+        this.isGlobalResourceGroupEnabled = false;
+        this.internalNodeManager = null;
+    }
+
+    protected InternalResourceGroup(
+            Optional<InternalResourceGroup> parent,
+            String name,
+            BiConsumer<InternalResourceGroup, Boolean> jmxExportListener,
+            Executor executor,
+            boolean staticResourceGroup,
+            Function<ResourceGroupId, Optional<ResourceGroupRuntimeInfo>> additionalRuntimeInfo,
+            Predicate<InternalResourceGroup> shouldWaitForResourceManagerUpdate,
+            Boolean isGlobalResourceGroupEnabled,
+            InternalNodeManager internalNodeManager)
+    {
+        this.parent = requireNonNull(parent, "parent is null");
+        this.jmxExportListener = requireNonNull(jmxExportListener, "jmxExportListener is null");
+        this.executor = requireNonNull(executor, "executor is null");
+        requireNonNull(name, "name is null");
+        if (parent.isPresent()) {
+            id = new ResourceGroupId(parent.get().id, name);
+            root = parent.get().root;
+        }
+        else {
+            id = new ResourceGroupId(name);
+            root = this;
+        }
+        this.staticResourceGroup = staticResourceGroup;
+        this.additionalRuntimeInfo = requireNonNull(additionalRuntimeInfo, "additionalRuntimeInfo is null");
+        this.shouldWaitForResourceManagerUpdate = requireNonNull(shouldWaitForResourceManagerUpdate, "shouldWaitForResourceManagerUpdate is null");
+        this.isGlobalResourceGroupEnabled = isGlobalResourceGroupEnabled;
+        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
     }
 
     public ResourceGroupInfo getResourceGroupInfo(boolean includeQueryInfo, boolean summarizeSubgroups, boolean includeStaticSubgroupsOnly)
@@ -642,7 +682,9 @@ public class InternalResourceGroup
                     executor,
                     staticResourceGroup && staticSegment,
                     additionalRuntimeInfo,
-                    shouldWaitForResourceManagerUpdate);
+                    shouldWaitForResourceManagerUpdate,
+                    isGlobalResourceGroupEnabled,
+                    internalNodeManager);
             // Sub group must use query priority to ensure ordering
             if (schedulingPolicy == QUERY_PRIORITY) {
                 subGroup.setSchedulingPolicy(QUERY_PRIORITY);
@@ -764,8 +806,13 @@ public class InternalResourceGroup
 
     private void startInBackground(ManagedQueryExecution query)
     {
+        /*
+            Find the next coordinator which can run the job and
+            redirect client to the coordinator
+         */
         checkState(Thread.holdsLock(root), "Must hold lock to start a query");
         synchronized (root) {
+
             runningQueries.add(query);
             InternalResourceGroup group = this;
             while (group.parent.isPresent()) {
@@ -774,7 +821,9 @@ public class InternalResourceGroup
                 group = group.parent.get();
             }
             updateEligibility();
-            executor.execute(query::startWaitingForResources);
+            if (!isGlobalResourceGroupEnabled) {
+                executor.execute(query::startWaitingForResources);
+            }
             group = this;
             long lastRunningQueryStartTimeMillis = currentTimeMillis();
             lastRunningQueryStartTime.set(lastRunningQueryStartTimeMillis);
@@ -782,6 +831,7 @@ public class InternalResourceGroup
                 group.parent.get().lastRunningQueryStartTime.set(lastRunningQueryStartTimeMillis);
                 group = group.parent.get();
             }
+
         }
     }
 
@@ -1114,6 +1164,26 @@ public class InternalResourceGroup
                     true,
                     additionalRuntimeInfo,
                     shouldWaitForResourceManagerUpdate);
+        }
+
+        public RootInternalResourceGroup(
+                String name,
+                BiConsumer<InternalResourceGroup, Boolean> jmxExportListener,
+                Executor executor,
+                Function<ResourceGroupId, Optional<ResourceGroupRuntimeInfo>> additionalRuntimeInfo,
+                Predicate<InternalResourceGroup> shouldWaitForResourceManagerUpdate,
+                Boolean isGlobalResourceGroupEnabled,
+                InternalNodeManager internalNodeManager)
+        {
+            super(Optional.empty(),
+                    name,
+                    jmxExportListener,
+                    executor,
+                    true,
+                    additionalRuntimeInfo,
+                    shouldWaitForResourceManagerUpdate,
+                    isGlobalResourceGroupEnabled,
+                    internalNodeManager);
         }
 
         public synchronized void processQueuedQueries()

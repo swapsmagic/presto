@@ -18,6 +18,8 @@ import com.facebook.airlift.node.NodeInfo;
 import com.facebook.presto.execution.ManagedQueryExecution;
 import com.facebook.presto.execution.QueryManagerConfig;
 import com.facebook.presto.execution.resourceGroups.InternalResourceGroup.RootInternalResourceGroup;
+import com.facebook.presto.metadata.InternalNode;
+import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.resourcemanager.ResourceGroupService;
 import com.facebook.presto.server.ResourceGroupInfo;
 import com.facebook.presto.server.ServerConfig;
@@ -106,6 +108,8 @@ public final class InternalResourceGroupManager<C>
     private final boolean isResourceManagerEnabled;
     private final boolean isGlobalResourceManagerEnabled;
 
+    private final InternalNodeManager internalNodeManager;
+
     @Inject
     public InternalResourceGroupManager(
             LegacyResourceGroupConfigurationManager legacyManager,
@@ -114,7 +118,8 @@ public final class InternalResourceGroupManager<C>
             NodeInfo nodeInfo,
             MBeanExporter exporter,
             ResourceGroupService resourceGroupService,
-            ServerConfig serverConfig)
+            ServerConfig serverConfig,
+            InternalNodeManager internalNodeManager)
     {
         requireNonNull(queryManagerConfig, "queryManagerConfig is null");
         this.exporter = requireNonNull(exporter, "exporter is null");
@@ -128,6 +133,7 @@ public final class InternalResourceGroupManager<C>
         this.isResourceManagerEnabled = requireNonNull(serverConfig, "serverConfig is null").isResourceManagerEnabled();
         this.isGlobalResourceManagerEnabled = serverConfig.isGlobalResourceGroupEnabled();
         this.resourceGroupRuntimeExecutor = new PeriodicTaskExecutor(resourceGroupRuntimeInfoRefreshInterval.toMillis(), refreshExecutor, this::refreshResourceGroupRuntimeInfo);
+        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
     }
 
     @Override
@@ -359,7 +365,9 @@ public final class InternalResourceGroupManager<C>
                                     rg,
                                     resourceGroupRuntimeInfosSnapshot::get,
                                     lastUpdatedResourceGroupRuntimeInfo::get,
-                                    concurrencyThreshold));
+                                    concurrencyThreshold),
+                            isGlobalResourceManagerEnabled,
+                            internalNodeManager);
                 }
                 group = root;
                 rootGroups.add(root);
@@ -401,6 +409,16 @@ public final class InternalResourceGroupManager<C>
         boolean result2 = totalRunningQueries >= (hardConcurrencyLimit * concurrencyThreshold);
         return totalRunningQueries >= (hardConcurrencyLimit * concurrencyThreshold) && lastUpdatedResourceGroupRuntimeInfo.getAsLong() <= resourceGroup.getLastRunningQueryStartTime();
     }
+
+    private static boolean isGlobalResourceGroupEnabled(boolean isGlobalResourceManagerEnabled)
+    {
+        return isGlobalResourceManagerEnabled;
+    }
+
+//    private static InternalNode selectRandomCoordinator()
+//    {
+//
+//    }
 
     @Managed
     public int getQueriesQueuedOnInternal()

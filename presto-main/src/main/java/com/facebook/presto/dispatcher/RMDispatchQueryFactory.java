@@ -24,8 +24,9 @@ import com.facebook.presto.execution.QueryExecution.QueryExecutionFactory;
 import com.facebook.presto.execution.QueryManager;
 import com.facebook.presto.execution.QueryStateMachine;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
+import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.metadata.Metadata;
-import com.facebook.presto.security.AccessControl;
+import com.facebook.presto.spi.security.AccessControl;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.WarningCollector;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
@@ -66,6 +67,8 @@ public class RMDispatchQueryFactory
 
     private final QueryPrerequisitesManager queryPrerequisitesManager;
 
+    private final InternalNodeManager internalNodeManager;
+
     /**
      * Instantiates a new Local dispatch query factory.
      *
@@ -91,7 +94,8 @@ public class RMDispatchQueryFactory
 //            Map<QueryType, QueryExecutionFactory<?>> executionFactories,
             ClusterSizeMonitor clusterSizeMonitor,
             DispatchExecutor dispatchExecutor,
-            QueryPrerequisitesManager queryPrerequisitesManager)
+            QueryPrerequisitesManager queryPrerequisitesManager,
+            InternalNodeManager internalNodeManager)
     {
         this.queryManager = requireNonNull(queryManager, "queryManager is null");
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
@@ -105,6 +109,7 @@ public class RMDispatchQueryFactory
 
         this.executor = requireNonNull(dispatchExecutor, "executorService is null").getExecutor();
         this.queryPrerequisitesManager = requireNonNull(queryPrerequisitesManager, "queryPrerequisitesManager is null");
+        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
     }
 
     /**
@@ -177,6 +182,7 @@ public class RMDispatchQueryFactory
                 queryQueuer,
                 queryManager::createQuery,
                 retryCount > 0,
-                queryPrerequisitesManager);
+                queryPrerequisitesManager,
+                internalNodeManager);
     }
 }
