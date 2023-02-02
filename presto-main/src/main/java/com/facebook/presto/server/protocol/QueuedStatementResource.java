@@ -224,7 +224,7 @@ public class QueuedStatementResource
     }
 
     @POST
-    @Path("/v1/statement/{queryId}")
+    @Path("/v1/statement/queued1/{queryId}")
     @Produces(APPLICATION_JSON)
     public Response postStatement(
             @PathParam("queryId") QueryId queryId,
@@ -315,6 +315,44 @@ public class QueuedStatementResource
     @Path("/v1/statement/queued/{queryId}/{token}")
     @Produces(APPLICATION_JSON)
     public void getStatus(
+            @PathParam("queryId") QueryId queryId,
+            @PathParam("token") long token,
+            @QueryParam("slug") String slug,
+            @QueryParam("maxWait") Duration maxWait,
+            @HeaderParam(X_FORWARDED_PROTO) String xForwardedProto,
+            @HeaderParam(PRESTO_PREFIX_URL) String xPrestoPrefixUrl,
+            @Context UriInfo uriInfo,
+            @Suspended AsyncResponse asyncResponse)
+    {
+        abortIfPrefixUrlInvalid(xPrestoPrefixUrl);
+
+        Query query = getQuery(queryId, slug);
+        ListenableFuture<Double> acquirePermitAsync = queryRateLimiter.acquire(queryId);
+        ListenableFuture<?> waitForDispatchedAsync = transformAsync(
+                acquirePermitAsync,
+                acquirePermitTimeSeconds -> {
+                    queryRateLimiter.addRateLimiterBlockTime(new Duration(acquirePermitTimeSeconds, SECONDS));
+                    return query.waitForDispatched();
+                },
+                responseExecutor);
+        // wait for query to be dispatched, up to the wait timeout
+        ListenableFuture<?> futureStateChange = addTimeout(
+                waitForDispatchedAsync,
+                () -> null,
+                WAIT_ORDERING.min(MAX_WAIT_TIME, maxWait),
+                timeoutExecutor);
+        // when state changes, fetch the next result
+        ListenableFuture<Response> queryResultsFuture = transformAsync(
+                futureStateChange,
+                ignored -> query.toResponse(token, uriInfo, xForwardedProto, xPrestoPrefixUrl, WAIT_ORDERING.min(MAX_WAIT_TIME, maxWait), compressionEnabled),
+                responseExecutor);
+        bindAsyncResponse(asyncResponse, queryResultsFuture, responseExecutor);
+    }
+
+    @GET
+    @Path("/v1/statement/queued1/{queryId}/{token}")
+    @Produces(APPLICATION_JSON)
+    public void getStatus1(
             @PathParam("queryId") QueryId queryId,
             @PathParam("token") long token,
             @QueryParam("slug") String slug,

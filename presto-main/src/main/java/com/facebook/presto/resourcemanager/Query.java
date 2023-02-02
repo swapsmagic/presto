@@ -542,6 +542,7 @@ class Query
                 queryHtmlUri,
                 findCancelableLeafStage(queryInfo),
                 nextResultsUri,
+                "GET",
                 columns,
                 data,
                 toStatementStats(queryInfo),

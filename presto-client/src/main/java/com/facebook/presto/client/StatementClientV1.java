@@ -28,6 +28,7 @@ import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
+import org.apache.http.client.methods.RequestBuilder;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
@@ -366,7 +367,15 @@ class StatementClientV1
             return false;
         }
 
-        Request request = prepareRequest(HttpUrl.get(nextUri)).build();
+        String method = currentStatusInfo().getMethod();
+
+        Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));
+        if (method.equals("POST"))
+        {
+            requestBuider.post(RequestBody.create(MEDIA_TYPE_TEXT, query)).addHeader(PRESTO_CATALOG, getSetCatalog().get()).addHeader(PRESTO_SCHEMA, getSetCatalog().get());
+        }
+
+        Request request = requestBuider.build();
 
         Exception cause = null;
         long start = System.nanoTime();

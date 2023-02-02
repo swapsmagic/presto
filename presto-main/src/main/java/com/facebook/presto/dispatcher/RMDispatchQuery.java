@@ -188,7 +188,9 @@ public class RMDispatchQuery
     @Override
     public void startWaitingForResources()
     {
-        throw new UnsupportedOperationException("Operation is not supported");
+        if (stateMachine.transitionToDispatched()) {
+            submitted.set(null);
+        }
     }
 
     private void startExecution(QueryExecution queryExecution, boolean isDispatching)

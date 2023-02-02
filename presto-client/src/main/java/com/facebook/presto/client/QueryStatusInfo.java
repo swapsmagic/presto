@@ -28,6 +28,8 @@ public interface QueryStatusInfo
 
     URI getNextUri();
 
+    String getMethod();
+
     List<Column> getColumns();
 
     StatementStats getStats();

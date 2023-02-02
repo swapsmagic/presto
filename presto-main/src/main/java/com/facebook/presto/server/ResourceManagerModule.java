@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.server;
 
+import com.facebook.airlift.concurrent.BoundedExecutor;
 import com.facebook.airlift.configuration.AbstractConfigurationAwareModule;
 import com.facebook.airlift.discovery.server.EmbeddedDiscoveryModule;
 import com.facebook.presto.common.resourceGroups.QueryType;
@@ -38,6 +39,7 @@ import com.facebook.presto.execution.QueryIdGenerator;
 import com.facebook.presto.execution.QueryInfo;
 import com.facebook.presto.execution.QueryManager;
 import com.facebook.presto.execution.SqlQueryExecution;
+import com.facebook.presto.execution.TaskManagerConfig;
 import com.facebook.presto.execution.resourceGroups.InternalResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.LegacyResourceGroupConfigurationManager;
 import com.facebook.presto.execution.resourceGroups.NoOpResourceGroupManager;
@@ -59,11 +61,15 @@ import com.facebook.presto.resourcemanager.DistributedQueryResource;
 import com.facebook.presto.resourcemanager.DistributedResourceGroupInfoResource;
 import com.facebook.presto.resourcemanager.DistributedTaskInfoResource;
 import com.facebook.presto.resourcemanager.ForResourceManager;
+import com.facebook.presto.resourcemanager.QueuedStatementResource;
 import com.facebook.presto.resourcemanager.RaftConfig;
 import com.facebook.presto.resourcemanager.RatisServer;
 import com.facebook.presto.resourcemanager.ResourceManagerClusterStateProvider;
 import com.facebook.presto.resourcemanager.ResourceManagerProxy;
 import com.facebook.presto.resourcemanager.ResourceManagerServer;
+import com.facebook.presto.server.protocol.LocalQueryProvider;
+import com.facebook.presto.server.protocol.QueryBlockingRateLimiter;
+import com.facebook.presto.server.protocol.RetryCircuitBreaker;
 import com.facebook.presto.spi.memory.ClusterMemoryPoolManager;
 import com.facebook.presto.transaction.NoOpTransactionManager;
 import com.facebook.presto.transaction.TransactionManager;
@@ -78,7 +84,9 @@ import io.airlift.units.Duration;
 import javax.inject.Singleton;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
 
+import static com.facebook.airlift.concurrent.Threads.daemonThreadsNamed;
 import static com.facebook.airlift.concurrent.Threads.threadsNamed;
 import static com.facebook.airlift.configuration.ConditionalModule.installModuleIf;
 import static com.facebook.airlift.configuration.ConfigBinder.configBinder;
@@ -91,6 +99,7 @@ import static com.facebook.airlift.json.smile.SmileCodecBinder.smileCodecBinder;
 import static com.facebook.drift.server.guice.DriftServerBinder.driftServerBinder;
 import static com.google.inject.multibindings.MapBinder.newMapBinder;
 import static java.util.concurrent.Executors.newCachedThreadPool;
+import static java.util.concurrent.Executors.newScheduledThreadPool;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.weakref.jmx.ObjectNames.generatedNameOf;
 import static org.weakref.jmx.guice.ExportBinder.newExporter;
@@ -145,6 +154,9 @@ public class ResourceManagerModule
         jaxrsBinder(binder).bind(DistributedClusterStatsResource.class);
         jaxrsBinder(binder).bind(DistributedTaskInfoResource.class);
 
+        //Binding New Queued Endpoint
+        jaxrsBinder(binder).bind(QueuedStatementResource.class);
+
         httpClientBinder(binder).bindHttpClient("resourceManager", ForResourceManager.class);
         binder.bind(ResourceManagerProxy.class).in(Scopes.SINGLETON);
         jsonBinder(binder).addSerializerBinding(Duration.class).to(DurationSerializer.class);
@@ -193,6 +205,14 @@ public class ResourceManagerModule
             binder.bind(ClusterSizeMonitor.class).in(Scopes.SINGLETON);
 
             configBinder(binder).bindConfig(NodeResourceStatusConfig.class);
+
+            binder.bind(LocalQueryProvider.class).in(Scopes.SINGLETON);
+
+            binder.bind(QueryBlockingRateLimiter.class).in(Scopes.SINGLETON);
+            newExporter(binder).export(QueryBlockingRateLimiter.class).withGeneratedName();
+
+            binder.bind(RetryCircuitBreaker.class).in(Scopes.SINGLETON);
+            newExporter(binder).export(RetryCircuitBreaker.class).withGeneratedName();
         }
         else {
             binder.bind(ResourceGroupManager.class).to(NoOpResourceGroupManager.class);
@@ -212,5 +232,29 @@ public class ResourceManagerModule
     public static ResourceGroupManager<?> getResourceGroupManager(@SuppressWarnings("rawtypes") ResourceGroupManager manager)
     {
         return manager;
+    }
+
+    @Provides
+    @Singleton
+    @ForStatementResource
+    public static BoundedExecutor createStatementResponseExecutor(@ForStatementResource ExecutorService coreExecutor, TaskManagerConfig config)
+    {
+        return new BoundedExecutor(coreExecutor, config.getHttpResponseThreads());
+    }
+
+    @Provides
+    @Singleton
+    @ForStatementResource
+    public static ExecutorService createStatementResponseCoreExecutor()
+    {
+        return newCachedThreadPool(daemonThreadsNamed("statement-response-%s"));
+    }
+
+    @Provides
+    @Singleton
+    @ForStatementResource
+    public static ScheduledExecutorService createStatementTimeoutExecutor(TaskManagerConfig config)
+    {
+        return newScheduledThreadPool(config.getHttpTimeoutThreads(), daemonThreadsNamed("statement-timeout-%s"));
     }
 }

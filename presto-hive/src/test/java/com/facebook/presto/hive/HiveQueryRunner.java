@@ -168,6 +168,10 @@ public final class HiveQueryRunner
                         .setCoordinatorProperties(extraCoordinatorProperties)
                         .setDataDirectory(dataDirectory)
                         .setExternalWorkerLauncher(externalWorkerLauncher)
+                        .setResourceManagerEnabled(true)
+                        .setCoordinatorCount(3)
+                        .setResourceManagerCount(1)
+                        .setGlobalResourceGroupEnabled(true)
                         .build();
         try {
             queryRunner.installPlugin(new TpchPlugin());

@@ -25,13 +25,18 @@ import com.facebook.presto.execution.StageExecutionInfo;
 import com.facebook.presto.execution.StageExecutionStats;
 import com.facebook.presto.execution.StageInfo;
 import com.facebook.presto.execution.TaskInfo;
+import com.facebook.presto.metadata.InternalNode;
+import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.function.SqlFunctionId;
 import com.facebook.presto.spi.function.SqlInvokedFunction;
+import com.facebook.presto.spi.security.SelectedRole;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+import io.airlift.units.Duration;
 
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.UriInfo;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
@@ -42,8 +47,10 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
+import static com.facebook.airlift.http.client.HttpUriBuilder.uriBuilderFrom;
 import static com.facebook.airlift.json.JsonCodec.jsonCodec;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_ADDED_PREPARE;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_ADDED_SESSION_FUNCTION;
@@ -57,8 +64,10 @@ import static com.facebook.presto.client.PrestoHeaders.PRESTO_SET_ROLE;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_SET_SCHEMA;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_SET_SESSION;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_STARTED_TRANSACTION_ID;
+import static com.facebook.presto.execution.QueryState.DISPATCHED;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.lang.String.format;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static javax.ws.rs.core.MediaType.TEXT_PLAIN_TYPE;
 
 public final class QueryResourceUtil
@@ -66,6 +75,8 @@ public final class QueryResourceUtil
     private static final Logger log = Logger.get(QueryResourceUtil.class);
     private static final JsonCodec<SqlFunctionId> SQL_FUNCTION_ID_JSON_CODEC = jsonCodec(SqlFunctionId.class);
     private static final JsonCodec<SqlInvokedFunction> SQL_INVOKED_FUNCTION_JSON_CODEC = jsonCodec(SqlInvokedFunction.class);
+
+    private static final Duration NO_DURATION = new Duration(0, MILLISECONDS);
 
     private QueryResourceUtil() {}
 
@@ -137,6 +148,7 @@ public final class QueryResourceUtil
                 prependUri(queryResults.getInfoUri(), xPrestoPrefixUri),
                 prependUri(queryResults.getPartialCancelUri(), xPrestoPrefixUri),
                 prependUri(queryResults.getNextUri(), xPrestoPrefixUri),
+                "GET",
                 queryResults.getColumns(),
                 queryResults.getData(),
                 queryResults.getStats(),
@@ -146,6 +158,88 @@ public final class QueryResourceUtil
                 queryResults.getUpdateCount());
 
         return toResponse(query, resultsClone, compressionEnabled);
+    }
+
+    public static Response toResponse(QueryId queryId, InternalNode coordinator, UriInfo uriInfo, String xPrestoPrefixUri,
+            boolean compressionEnabled, Optional<String> catalog, Optional<String> schema, Map<String, String> setSessionProperties,
+            Set<String> resetSessionProperties, Map<String, SelectedRole> setRoles,
+            Map<String, String> addedPreparedStatements, Set<String> deAllocatedPreparedStatements)
+    {
+
+        URI infoUri = uriInfo.getRequestUriBuilder()
+                .scheme(uriInfo.getBaseUri().getScheme())
+                .replacePath("ui/query.html")
+                .host(coordinator.getHost())
+                .port(coordinator.getHostAndPort().getPort())
+                .replaceQuery(queryId.toString())
+                .build();
+
+        URI nextUri = uriInfo.getBaseUriBuilder()
+                .scheme(uriInfo.getBaseUri().getScheme())
+                .replacePath("/v1/statement/queued1")
+                .path(queryId.toString())
+                .host(coordinator.getHost())
+                .port(coordinator.getHostAndPort().getPort())
+                .build();
+
+
+        URI uri = uriBuilderFrom(uriInfo.getBaseUri()).host(coordinator.getHost()).port(coordinator.getHostAndPort().getPort()).build();
+
+        QueryResults queryResults = new QueryResults(
+                queryId.toString(),
+                prependUri(infoUri, xPrestoPrefixUri),
+                prependUri(uri, xPrestoPrefixUri),
+                prependUri(nextUri, xPrestoPrefixUri),
+                "POST",
+                null,
+                null,
+                StatementStats.builder()
+                        .setState(DISPATCHED.toString())
+                        .setWaitingForPrerequisites(false)
+                        .setElapsedTimeMillis(NO_DURATION.toMillis())
+                        .setQueuedTimeMillis(NO_DURATION.toMillis())
+                        .setWaitingForPrerequisitesTimeMillis(NO_DURATION.toMillis())
+                        .build(),
+                null,
+                ImmutableList.of(),
+                null,
+                null
+                );
+
+        Response.ResponseBuilder response = Response.ok(queryResults);
+
+        // add set catalog and schema
+        catalog.ifPresent(c -> response.header(PRESTO_SET_CATALOG, c));
+        schema.ifPresent(s -> response.header(PRESTO_SET_SCHEMA, s));
+
+        // add set session properties
+        setSessionProperties.forEach((key, value) -> response.header(PRESTO_SET_SESSION, key + '=' + urlEncode(value)));
+
+        // add clear session properties
+        resetSessionProperties.forEach(name -> response.header(PRESTO_CLEAR_SESSION, name));
+
+        // add set roles
+        setRoles.forEach((key, value) -> response.header(PRESTO_SET_ROLE, key + '=' + urlEncode(value.toString())));
+
+        // add added prepare statements
+        for (Map.Entry<String, String> entry : addedPreparedStatements.entrySet()) {
+            String encodedKey = urlEncode(entry.getKey());
+            String encodedValue = urlEncode(entry.getValue());
+            response.header(PRESTO_ADDED_PREPARE, encodedKey + '=' + encodedValue);
+        }
+
+        // add deallocated prepare statements
+        for (String name : deAllocatedPreparedStatements) {
+            response.header(PRESTO_DEALLOCATED_PREPARE, urlEncode(name));
+        }
+
+
+        if (!compressionEnabled) {
+            response.encoding("identity");
+        }
+
+        return response.build();
+
     }
 
     public static void abortIfPrefixUrlInvalid(String xPrestoPrefixUrl)

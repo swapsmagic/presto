@@ -239,6 +239,7 @@ public class DistributedQueryRunner
                         int raftPort = Integer.valueOf(resourceManagerProperties.get("raft.port")) + i;
                         rmProperties.replace("raft.port", String.valueOf(raftPort));
                     }
+                    rmProperties.put("http-server.http.port", "9090");
                     TestingPrestoServer resourceManager = closer.register(createTestingPrestoServer(
                             discoveryUrl,
                             true,
@@ -535,7 +536,7 @@ public class DistributedQueryRunner
 
     public TestingPrestoServer getCoordinator()
     {
-        checkState(coordinators.size() == 1, "Expected a single coordinator");
+        //checkState(coordinators.size() == 1, "Expected a single coordinator");
         return coordinators.get(0);
     }
 

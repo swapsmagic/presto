@@ -821,9 +821,7 @@ public class InternalResourceGroup
                 group = group.parent.get();
             }
             updateEligibility();
-            if (!isGlobalResourceGroupEnabled) {
-                executor.execute(query::startWaitingForResources);
-            }
+            executor.execute(query::startWaitingForResources);
             group = this;
             long lastRunningQueryStartTimeMillis = currentTimeMillis();
             lastRunningQueryStartTime.set(lastRunningQueryStartTimeMillis);

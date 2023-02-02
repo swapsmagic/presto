@@ -70,6 +70,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import static com.facebook.presto.execution.BasicStageExecutionStats.EMPTY_STAGE_STATS;
+import static com.facebook.presto.execution.QueryState.DISPATCHED;
 import static com.facebook.presto.execution.QueryState.DISPATCHING;
 import static com.facebook.presto.execution.QueryState.FINISHED;
 import static com.facebook.presto.execution.QueryState.FINISHING;
@@ -760,6 +761,12 @@ public class QueryStateMachine
     public void endColumnAccessPermissionChecking()
     {
         queryStateTimer.endColumnAccessPermissionChecking();
+    }
+
+    public boolean transitionToDispatched()
+    {
+        queryStateTimer.beginDispatching();
+        return queryState.setIf(DISPATCHED, currentState -> currentState.ordinal() < DISPATCHED.ordinal());
     }
 
     public boolean transitionToDispatching()

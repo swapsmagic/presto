@@ -39,6 +39,7 @@ public class QueryResults
     private final URI infoUri;
     private final URI partialCancelUri;
     private final URI nextUri;
+    private final String method;
     private final List<Column> columns;
     private final Iterable<List<Object>> data;
     private final StatementStats stats;
@@ -47,7 +48,7 @@ public class QueryResults
     private final String updateType;
     private final Long updateCount;
 
-    @JsonCreator
+//    @JsonCreator
     public QueryResults(
             @JsonProperty("id") String id,
             @JsonProperty("infoUri") URI infoUri,
@@ -66,6 +67,37 @@ public class QueryResults
                 infoUri,
                 partialCancelUri,
                 nextUri,
+                "GET",
+                columns,
+                fixData(columns, data),
+                stats,
+                error,
+                firstNonNull(warnings, ImmutableList.of()),
+                updateType,
+                updateCount);
+    }
+
+    @JsonCreator
+    public QueryResults(
+            @JsonProperty("id") String id,
+            @JsonProperty("infoUri") URI infoUri,
+            @JsonProperty("partialCancelUri") URI partialCancelUri,
+            @JsonProperty("nextUri") URI nextUri,
+            @JsonProperty("method") String method,
+            @JsonProperty("columns") List<Column> columns,
+            @JsonProperty("data") List<List<Object>> data,
+            @JsonProperty("stats") StatementStats stats,
+            @JsonProperty("error") QueryError error,
+            @JsonProperty("warnings") List<PrestoWarning> warnings,
+            @JsonProperty("updateType") String updateType,
+            @JsonProperty("updateCount") Long updateCount)
+    {
+        this(
+                id,
+                infoUri,
+                partialCancelUri,
+                nextUri,
+                method,
                 columns,
                 fixData(columns, data),
                 stats,
@@ -80,6 +112,7 @@ public class QueryResults
             URI infoUri,
             URI partialCancelUri,
             URI nextUri,
+            String method,
             List<Column> columns,
             Iterable<List<Object>> data,
             StatementStats stats,
@@ -92,6 +125,7 @@ public class QueryResults
         this.infoUri = requireNonNull(infoUri, "infoUri is null");
         this.partialCancelUri = partialCancelUri;
         this.nextUri = nextUri;
+        this.method = method;
         this.columns = (columns != null) ? ImmutableList.copyOf(columns) : null;
         this.data = (data != null) ? unmodifiableIterable(data) : null;
         checkArgument(data == null || columns != null, "data present without columns");
@@ -145,6 +179,13 @@ public class QueryResults
     public URI getNextUri()
     {
         return nextUri;
+    }
+
+    @JsonProperty
+    @Override
+    public String getMethod()
+    {
+        return method;
     }
 
     /**
@@ -235,6 +276,7 @@ public class QueryResults
                 .add("infoUri", infoUri)
                 .add("partialCancelUri", partialCancelUri)
                 .add("nextUri", nextUri)
+                .add("method", method)
                 .add("columns", columns)
                 .add("hasData", data != null)
                 .add("stats", stats)

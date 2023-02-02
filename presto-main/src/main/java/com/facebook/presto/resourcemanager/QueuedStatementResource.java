@@ -26,6 +26,8 @@ import com.facebook.presto.dispatcher.DispatchManager;
 import com.facebook.presto.dispatcher.RMDispatchManager;
 import com.facebook.presto.execution.ExecutionFailureInfo;
 import com.facebook.presto.execution.QueryState;
+import com.facebook.presto.metadata.InternalNode;
+import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.metadata.SessionPropertyManager;
 import com.facebook.presto.server.HttpRequestSessionContext;
 import com.facebook.presto.server.ServerConfig;
@@ -38,6 +40,7 @@ import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.sql.parser.SqlParserOptions;
 import com.facebook.presto.tracing.TracerProviderManager;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Ordering;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -136,6 +139,8 @@ public class QueuedStatementResource
     private final QueryBlockingRateLimiter queryRateLimiter;
     private final TimeStat queuedRateLimiterBlockTime = new TimeStat();
 
+    private final InternalNodeManager internalNodeManager;
+
     @Inject
     public QueuedStatementResource(
             RMDispatchManager dispatchManager,
@@ -145,7 +150,8 @@ public class QueuedStatementResource
             ServerConfig serverConfig,
             TracerProviderManager tracerProviderManager,
             SessionPropertyManager sessionPropertyManager,
-            QueryBlockingRateLimiter queryRateLimiter)
+            QueryBlockingRateLimiter queryRateLimiter,
+            InternalNodeManager internalNodeManager)
     {
         this.dispatchManager = requireNonNull(dispatchManager, "dispatchManager is null");
         this.queryResultsProvider = queryResultsProvider;
@@ -158,6 +164,8 @@ public class QueuedStatementResource
         this.sessionPropertyManager = sessionPropertyManager;
 
         this.queryRateLimiter = requireNonNull(queryRateLimiter, "queryRateLimiter is null");
+
+        this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
 
         queryPurger.scheduleWithFixedDelay(
                 () -> {
@@ -319,7 +327,7 @@ public class QueuedStatementResource
         // when state changes, fetch the next result
         ListenableFuture<Response> queryResultsFuture = transformAsync(
                 futureStateChange,
-                ignored -> query.toResponse(token, uriInfo, xForwardedProto, xPrestoPrefixUrl, WAIT_ORDERING.min(MAX_WAIT_TIME, maxWait), compressionEnabled),
+                ignored -> query.toResponse(query, internalNodeManager.getCoordinators().stream().findAny().get(), token, uriInfo, xForwardedProto, xPrestoPrefixUrl, WAIT_ORDERING.min(MAX_WAIT_TIME, maxWait), compressionEnabled),
                 responseExecutor);
         bindAsyncResponse(asyncResponse, queryResultsFuture, responseExecutor);
     }
@@ -607,10 +615,57 @@ public class QueuedStatementResource
                 Put New Logic Here
                 If query state changed then return the coordinator URI with ar reset token
              */
+
             return transform(
                     query.waitForResults(0, uriInfo, getScheme(xForwardedProto, uriInfo), maxWait, TARGET_RESULT_SIZE),
                     results -> QueryResourceUtil.toResponse(query, results, xPrestoPrefixUrl, compressionEnabled),
                     directExecutor());
+        }
+
+        public ListenableFuture<Response> toResponse(Query query, InternalNode coordinator, long token, UriInfo uriInfo, String xForwardedProto, String xPrestoPrefixUrl, Duration maxWait, boolean compressionEnabled)
+        {
+            long lastToken = this.lastToken.get();
+            // token should be the last token or the next token
+            if (token != lastToken && token != lastToken + 1) {
+                throw new WebApplicationException(Response.Status.GONE);
+            }
+            // advance (or stay at) the token
+            this.lastToken.compareAndSet(lastToken, token);
+
+            synchronized (this) {
+                // if query submission has not finished, return simple empty result
+                if (querySubmissionFuture == null || !querySubmissionFuture.isDone()) {
+                    QueryResults queryResults = createQueryResults(
+                            token + 1,
+                            uriInfo,
+                            xForwardedProto,
+                            xPrestoPrefixUrl,
+                            DispatchInfo.waitingForPrerequisites(NO_DURATION, NO_DURATION));
+                    return immediateFuture(withCompressionConfiguration(Response.ok(queryResults), compressionEnabled).build());
+                }
+            }
+
+            Optional<DispatchInfo> dispatchInfo = dispatchManager.getDispatchInfo(queryId);
+            if (!dispatchInfo.isPresent()) {
+                // query should always be found, but it may have just been determined to be abandoned
+                return immediateFailedFuture(new WebApplicationException(Response
+                        .status(NOT_FOUND)
+                        .build()));
+            }
+
+            if (!waitForDispatched().isDone()) {
+                return immediateFuture(withCompressionConfiguration(Response.ok(createQueryResults(token + 1, uriInfo, xForwardedProto, xPrestoPrefixUrl, dispatchInfo.get())), compressionEnabled).build());
+            }
+
+            // If this future completes successfully, the next URI will redirect to the executing statement endpoint.
+            // Hence it is safe to hardcode the token to be 0.
+            /*
+                Put New Logic Here
+                If query state changed then return the coordinator URI with ar reset token
+             */
+
+            return immediateFuture(QueryResourceUtil.toResponse(queryId, coordinator, uriInfo, xPrestoPrefixUrl, compressionEnabled, Optional.of(query.getSessionContext().getCatalog()),
+                    Optional.of(query.getSessionContext().getSchema()), ImmutableMap.of(), ImmutableSet.of(), ImmutableMap.of(), ImmutableMap.of(), ImmutableSet.of()));
         }
 
         public synchronized void cancel()
