@@ -118,6 +118,8 @@ class StatementClientV1
 
     private final AtomicReference<State> state = new AtomicReference<>(State.RUNNING);
 
+    private final ClientSession session;
+
     public StatementClientV1(OkHttpClient httpClient, ClientSession session, String query)
     {
         requireNonNull(httpClient, "httpClient is null");
@@ -131,6 +133,7 @@ class StatementClientV1
         this.user = session.getUser();
         this.compressionDisabled = session.isCompressionDisabled();
 
+        this.session = session;
         Request request = buildQueryRequest(session, query);
 
         JsonResponse<QueryResults> response = JsonResponse.execute(QUERY_RESULTS_CODEC, httpClient, request);
@@ -354,6 +357,80 @@ class StatementClientV1
         return builder;
     }
 
+    private Request buildQueryRequest(HttpUrl url)
+    {
+        //HttpUrl url = HttpUrl.get(session.getServer());
+        if (url == null) {
+            throw new ClientException("Invalid server URL: " + url.toString());
+        }
+        //url = url.newBuilder().encodedPath("/v1/statement").build();
+
+        Request.Builder builder = prepareRequest(url)
+                .post(RequestBody.create(MEDIA_TYPE_TEXT, query));
+
+        Map<String, String> customHeaders = session.getCustomHeaders();
+        for (Entry<String, String> entry : customHeaders.entrySet()) {
+            builder.addHeader(entry.getKey(), entry.getValue());
+        }
+
+        if (session.getSource() != null) {
+            builder.addHeader(PRESTO_SOURCE, session.getSource());
+        }
+
+        session.getTraceToken().ifPresent(token -> builder.addHeader(PRESTO_TRACE_TOKEN, token));
+
+        if (session.getClientTags() != null && !session.getClientTags().isEmpty()) {
+            builder.addHeader(PRESTO_CLIENT_TAGS, Joiner.on(",").join(session.getClientTags()));
+        }
+        if (session.getClientInfo() != null) {
+            builder.addHeader(PRESTO_CLIENT_INFO, session.getClientInfo());
+        }
+        if (getSetCatalog().isPresent()) {
+            builder.addHeader(PRESTO_CATALOG, getSetCatalog().get());
+        }
+        if (getSetSchema().isPresent()) {
+            builder.addHeader(PRESTO_SCHEMA, getSetSchema().get());
+        }
+        builder.addHeader(PRESTO_TIME_ZONE, session.getTimeZone().getId());
+        if (session.getLocale() != null) {
+            builder.addHeader(PRESTO_LANGUAGE, session.getLocale().toLanguageTag());
+        }
+
+        Map<String, String> property = session.getProperties();
+        for (Entry<String, String> entry : property.entrySet()) {
+            builder.addHeader(PRESTO_SESSION, entry.getKey() + "=" + urlEncode(entry.getValue()));
+        }
+
+        Map<String, String> resourceEstimates = session.getResourceEstimates();
+        for (Entry<String, String> entry : resourceEstimates.entrySet()) {
+            builder.addHeader(PRESTO_RESOURCE_ESTIMATE, entry.getKey() + "=" + entry.getValue());
+        }
+
+        Map<String, SelectedRole> roles = session.getRoles();
+        for (Entry<String, SelectedRole> entry : roles.entrySet()) {
+            builder.addHeader(PrestoHeaders.PRESTO_ROLE, entry.getKey() + '=' + urlEncode(entry.getValue().toString()));
+        }
+
+        Map<String, String> extraCredentials = session.getExtraCredentials();
+        for (Entry<String, String> entry : extraCredentials.entrySet()) {
+            builder.addHeader(PRESTO_EXTRA_CREDENTIAL, entry.getKey() + "=" + entry.getValue());
+        }
+
+        Map<String, String> statements = session.getPreparedStatements();
+        for (Entry<String, String> entry : statements.entrySet()) {
+            builder.addHeader(PRESTO_PREPARED_STATEMENT, urlEncode(entry.getKey()) + "=" + urlEncode(entry.getValue()));
+        }
+
+        builder.addHeader(PRESTO_TRANSACTION_ID, session.getTransactionId() == null ? "NONE" : session.getTransactionId());
+
+        Map<String, String> sessionFunctions = session.getSessionFunctions();
+        for (Entry<String, String> entry : sessionFunctions.entrySet()) {
+            builder.addHeader(PRESTO_SESSION_FUNCTION, urlEncode(entry.getKey()) + "=" + urlEncode(entry.getValue()));
+        }
+
+        return builder.build();
+    }
+
     @Override
     public boolean advance()
     {
@@ -369,13 +446,18 @@ class StatementClientV1
 
         String method = currentStatusInfo().getMethod();
 
-        Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));
+        Request request;
+
         if (method.equals("POST"))
         {
-            requestBuider.post(RequestBody.create(MEDIA_TYPE_TEXT, query)).addHeader(PRESTO_CATALOG, getSetCatalog().get()).addHeader(PRESTO_SCHEMA, getSetCatalog().get());
-        }
+            Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));
+            request = buildQueryRequest(HttpUrl.get(nextUri));
 
-        Request request = requestBuider.build();
+        }
+        else {
+            Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));
+            request = requestBuider.build();
+        }
 
         Exception cause = null;
         long start = System.nanoTime();
