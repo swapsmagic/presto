@@ -159,6 +159,12 @@ public final class InternalResourceGroupManager<C>
     }
 
     @Override
+    public void finishQuery(String queryId, Optional<ResourceGroupId> resourceGroupId)
+    {
+        groups.get(resourceGroupId.get()).finishRemoteQuery(queryId);
+    }
+
+    @Override
     public SelectionContext<C> selectGroup(SelectionCriteria criteria)
     {
         return configurationManager.get().match(criteria)
@@ -414,11 +420,6 @@ public final class InternalResourceGroupManager<C>
     {
         return isGlobalResourceManagerEnabled;
     }
-
-//    private static InternalNode selectRandomCoordinator()
-//    {
-//
-//    }
 
     @Managed
     public int getQueriesQueuedOnInternal()

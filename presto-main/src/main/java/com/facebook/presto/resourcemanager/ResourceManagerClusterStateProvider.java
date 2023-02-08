@@ -13,6 +13,8 @@
  */
 package com.facebook.presto.resourcemanager;
 
+import com.facebook.presto.execution.resourceGroups.InternalResourceGroupManager;
+import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupRuntimeInfo;
 import com.facebook.presto.memory.ClusterMemoryPool;
 import com.facebook.presto.memory.MemoryInfo;
@@ -83,13 +85,16 @@ public class ResourceManagerClusterStateProvider
     private final boolean isReservedPoolEnabled;
     private final Supplier<Map<MemoryPoolId, ClusterMemoryPoolInfo>> clusterMemoryPoolInfosSupplier;
 
+    private final ResourceGroupManager resourceGroupManager;
+
     @Inject
     public ResourceManagerClusterStateProvider(
             InternalNodeManager internalNodeManager,
             SessionPropertyManager sessionPropertyManager,
             ResourceManagerConfig resourceManagerConfig,
             NodeMemoryConfig nodeMemoryConfig,
-            @ForResourceManager ScheduledExecutorService scheduledExecutorService)
+            @ForResourceManager ScheduledExecutorService scheduledExecutorService,
+            ResourceGroupManager resourceGroupManager)
     {
         this(
                 requireNonNull(internalNodeManager, "internalNodeManager is null"),
@@ -101,7 +106,8 @@ public class ResourceManagerClusterStateProvider
                 resourceManagerConfig.getMemoryPoolInfoRefreshDuration(),
                 resourceManagerConfig.getResourceGroupRuntimeInfoTimeout(),
                 requireNonNull(nodeMemoryConfig, "nodeMemoryConfig is null").isReservedPoolEnabled(),
-                requireNonNull(scheduledExecutorService, "scheduledExecutorService is null"));
+                requireNonNull(scheduledExecutorService, "scheduledExecutorService is null"),
+                resourceGroupManager);
     }
 
     public ResourceManagerClusterStateProvider(
@@ -115,6 +121,32 @@ public class ResourceManagerClusterStateProvider
             Duration resourceGroupRuntimeInfoTimeout,
             boolean isReservedPoolEnabled,
             ScheduledExecutorService scheduledExecutorService)
+    {
+        this(
+                internalNodeManager,
+                sessionPropertyManager,
+                maxCompletedQueries,
+                queryExpirationTimeout,
+                completedQueryExpirationTimeout,
+                nodeStatusTimeout,
+                memoryPoolInfoRefreshDuration,
+                isReservedPoolEnabled,
+                scheduledExecutorService,
+                null
+                );
+    }
+
+    public ResourceManagerClusterStateProvider(
+            InternalNodeManager internalNodeManager,
+            SessionPropertyManager sessionPropertyManager,
+            int maxCompletedQueries,
+            Duration queryExpirationTimeout,
+            Duration completedQueryExpirationTimeout,
+            Duration nodeStatusTimeout,
+            Duration memoryPoolInfoRefreshDuration,
+            boolean isReservedPoolEnabled,
+            ScheduledExecutorService scheduledExecutorService,
+            ResourceGroupManager resourceGroupManager)
     {
         this.internalNodeManager = requireNonNull(internalNodeManager, "internalNodeManager is null");
         checkArgument(maxCompletedQueries > 0, "maxCompletedQueries must be > 0, was %s", maxCompletedQueries);
@@ -158,6 +190,8 @@ public class ResourceManagerClusterStateProvider
         scheduledExecutorService.scheduleAtFixedRate(() -> {
             adjustedQueueSize.set(computeAdjustedQueueSize());
         }, 100, 1000, MILLISECONDS);
+
+        this.resourceGroupManager = resourceGroupManager;
     }
 
     public void registerQueryHeartbeat(String nodeId, BasicQueryInfo basicQueryInfo, long sequenceId)
@@ -177,6 +211,10 @@ public class ResourceManagerClusterStateProvider
                 queryExpirationTimeout.toMillis(),
                 completedQueryExpirationTimeout.toMillis()));
         state.addOrUpdateQuery(basicQueryInfo, sequenceId);
+
+        if (basicQueryInfo.getState().isDone()) {
+            resourceGroupManager.finishQuery(basicQueryInfo.getQueryId().toString(), basicQueryInfo.getResourceGroupId());
+        }
     }
 
     public void registerNodeHeartbeat(NodeStatus nodeStatus)

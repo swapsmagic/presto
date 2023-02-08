@@ -15,6 +15,7 @@ package com.facebook.presto.execution.resourceGroups;
 
 import com.facebook.airlift.stats.CounterStat;
 import com.facebook.presto.execution.ManagedQueryExecution;
+import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.execution.SqlQueryExecution;
 import com.facebook.presto.execution.resourceGroups.WeightedFairQueue.Usage;
 import com.facebook.presto.metadata.InternalNode;
@@ -139,6 +140,10 @@ public class InternalResourceGroup
     private TieredQueue<ManagedQueryExecution> queuedQueries = new TieredQueue<>(FifoQueue::new);
     @GuardedBy("root")
     private final Set<ManagedQueryExecution> runningQueries = new HashSet<>();
+
+    @GuardedBy("root")
+    private final Map<String, ManagedQueryExecution> runningQueryMapping = new HashMap<>();
+
     @GuardedBy("root")
     private int descendantRunningQueries;
     @GuardedBy("root")
@@ -814,6 +819,7 @@ public class InternalResourceGroup
         synchronized (root) {
 
             runningQueries.add(query);
+            runningQueryMapping.put(query.getBasicQueryInfo().getQueryId().toString(), query);
             InternalResourceGroup group = this;
             while (group.parent.isPresent()) {
                 group.parent.get().descendantRunningQueries++;
@@ -848,7 +854,7 @@ public class InternalResourceGroup
                     group = group.parent.orElse(null);
                 }
             }
-            if (runningQueries.contains(query)) {
+            if (runningQueries.contains(query) && query.getBasicQueryInfo().getState() != QueryState.DISPATCHED) {
                 runningQueries.remove(query);
                 InternalResourceGroup group = this;
                 while (group.parent.isPresent()) {
@@ -859,6 +865,43 @@ public class InternalResourceGroup
             else {
                 queuedQueries.remove(query);
                 InternalResourceGroup group = this;
+                while (group.parent.isPresent()) {
+                    group.parent.get().descendantQueuedQueries--;
+                    group = group.parent.get();
+                }
+            }
+            updateEligibility();
+        }
+    }
+
+    public void finishRemoteQuery(String queryId)
+    {
+        synchronized (root) {
+            ManagedQueryExecution query = runningQueryMapping.remove(queryId);
+            if (query == null) {
+                // Query has already been finished
+                return;
+            }
+
+            //Always do CPU calculation for prototype
+//            if (!query.getErrorCode().isPresent() || query.getErrorCode().get().getType() == USER_ERROR) {
+                InternalResourceGroup group = this;
+                while (group != null) {
+                    group.cpuUsageMillis = saturatedAdd(group.cpuUsageMillis, query.getTotalCpuTime().toMillis());
+                    group = group.parent.orElse(null);
+                }
+//            }
+            if (runningQueries.contains(query)) {
+                runningQueries.remove(query);
+                group = this;
+                while (group.parent.isPresent()) {
+                    group.parent.get().descendantRunningQueries--;
+                    group = group.parent.get();
+                }
+            }
+            else {
+                queuedQueries.remove(query);
+                group = this;
                 while (group.parent.isPresent()) {
                     group.parent.get().descendantQueuedQueries--;
                     group = group.parent.get();

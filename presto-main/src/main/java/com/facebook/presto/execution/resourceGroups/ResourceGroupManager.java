@@ -23,6 +23,7 @@ import com.facebook.presto.spi.resourceGroups.SelectionCriteria;
 import javax.annotation.concurrent.ThreadSafe;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 
 /**
@@ -46,4 +47,6 @@ public interface ResourceGroupManager<C>
             throws Exception;
 
     List<ResourceGroupRuntimeInfo> getResourceGroupRuntimeInfos();
+
+    void finishQuery(String queryId, Optional<ResourceGroupId> resourceGroupId);
 }

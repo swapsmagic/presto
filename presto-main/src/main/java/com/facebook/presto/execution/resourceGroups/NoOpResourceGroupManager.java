@@ -21,6 +21,7 @@ import com.facebook.presto.spi.resourceGroups.SelectionContext;
 import com.facebook.presto.spi.resourceGroups.SelectionCriteria;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executor;
 
 /**
@@ -69,5 +70,11 @@ public final class NoOpResourceGroupManager
     public List<ResourceGroupRuntimeInfo> getResourceGroupRuntimeInfos()
     {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void finishQuery(String queryId, Optional<ResourceGroupId> resourceGroupId)
+    {
+
     }
 }
