@@ -19,32 +19,24 @@ import com.facebook.presto.common.resourceGroups.QueryType;
 import com.facebook.presto.event.QueryMonitor;
 import com.facebook.presto.execution.ClusterSizeMonitor;
 import com.facebook.presto.execution.LocationFactory;
-import com.facebook.presto.execution.QueryExecution;
-import com.facebook.presto.execution.QueryExecution.QueryExecutionFactory;
 import com.facebook.presto.execution.QueryManager;
 import com.facebook.presto.execution.QueryStateMachine;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.metadata.Metadata;
-import com.facebook.presto.spi.security.AccessControl;
-import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.WarningCollector;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
-import com.facebook.presto.sql.analyzer.BuiltInQueryPreparer;
+import com.facebook.presto.spi.security.AccessControl;
 import com.facebook.presto.tracing.NoopTracerProvider;
 import com.facebook.presto.tracing.QueryStateTracingListener;
 import com.facebook.presto.transaction.TransactionManager;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 
 import javax.inject.Inject;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static com.facebook.presto.spi.StandardErrorCode.NOT_SUPPORTED;
-import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 
 /**

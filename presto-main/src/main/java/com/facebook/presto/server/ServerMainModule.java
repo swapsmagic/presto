@@ -420,7 +420,7 @@ public class ServerMainModule
                     {
                         configBinder(moduleBinder).bindConfig(ResourceManagerConfig.class);
                         moduleBinder.bind(ClusterStatusSender.class).to(ResourceManagerClusterStatusSender.class).in(Scopes.SINGLETON);
-                        if (serverConfig.isCoordinator() || (serverConfig.isGlobalResourceGroupEnabled() && serverConfig.isResourceManager()) ) {
+                        if (serverConfig.isCoordinator() || (serverConfig.isGlobalResourceGroupEnabled() && serverConfig.isResourceManager())) {
                             moduleBinder.bind(ClusterMemoryManagerService.class).in(Scopes.SINGLETON);
                             moduleBinder.bind(ClusterQueryTrackerService.class).in(Scopes.SINGLETON);
                             moduleBinder.bind(ResourceGroupService.class).to(ResourceManagerResourceGroupService.class).in(Scopes.SINGLETON);

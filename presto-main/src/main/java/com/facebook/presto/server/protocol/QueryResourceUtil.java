@@ -165,7 +165,6 @@ public final class QueryResourceUtil
             Set<String> resetSessionProperties, Map<String, SelectedRole> setRoles,
             Map<String, String> addedPreparedStatements, Set<String> deAllocatedPreparedStatements)
     {
-
         URI infoUri = uriInfo.getRequestUriBuilder()
                 .scheme(uriInfo.getBaseUri().getScheme())
                 .replacePath("ui/query.html")
@@ -181,7 +180,6 @@ public final class QueryResourceUtil
                 .host(coordinator.getHost())
                 .port(coordinator.getHostAndPort().getPort())
                 .build();
-
 
         URI uri = uriBuilderFrom(uriInfo.getBaseUri()).host(coordinator.getHost()).port(coordinator.getHostAndPort().getPort()).build();
 
@@ -203,8 +201,7 @@ public final class QueryResourceUtil
                 null,
                 ImmutableList.of(),
                 null,
-                null
-                );
+                null);
 
         Response.ResponseBuilder response = Response.ok(queryResults);
 
@@ -233,13 +230,11 @@ public final class QueryResourceUtil
             response.header(PRESTO_DEALLOCATED_PREPARE, urlEncode(name));
         }
 
-
         if (!compressionEnabled) {
             response.encoding("identity");
         }
 
         return response.build();
-
     }
 
     public static void abortIfPrefixUrlInvalid(String xPrestoPrefixUrl)

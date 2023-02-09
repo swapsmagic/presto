@@ -18,7 +18,6 @@ import com.facebook.presto.execution.ManagedQueryExecution;
 import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.execution.SqlQueryExecution;
 import com.facebook.presto.execution.resourceGroups.WeightedFairQueue.Usage;
-import com.facebook.presto.metadata.InternalNode;
 import com.facebook.presto.metadata.InternalNodeManager;
 import com.facebook.presto.server.QueryStateInfo;
 import com.facebook.presto.server.ResourceGroupInfo;
@@ -817,7 +816,6 @@ public class InternalResourceGroup
          */
         checkState(Thread.holdsLock(root), "Must hold lock to start a query");
         synchronized (root) {
-
             runningQueries.add(query);
             runningQueryMapping.put(query.getBasicQueryInfo().getQueryId().toString(), query);
             InternalResourceGroup group = this;
@@ -835,7 +833,6 @@ public class InternalResourceGroup
                 group.parent.get().lastRunningQueryStartTime.set(lastRunningQueryStartTimeMillis);
                 group = group.parent.get();
             }
-
         }
     }
 
@@ -885,11 +882,11 @@ public class InternalResourceGroup
 
             //Always do CPU calculation for prototype
 //            if (!query.getErrorCode().isPresent() || query.getErrorCode().get().getType() == USER_ERROR) {
-                InternalResourceGroup group = this;
-                while (group != null) {
-                    group.cpuUsageMillis = saturatedAdd(group.cpuUsageMillis, query.getTotalCpuTime().toMillis());
-                    group = group.parent.orElse(null);
-                }
+            InternalResourceGroup group = this;
+            while (group != null) {
+                group.cpuUsageMillis = saturatedAdd(group.cpuUsageMillis, query.getTotalCpuTime().toMillis());
+                group = group.parent.orElse(null);
+            }
 //            }
             if (runningQueries.contains(query)) {
                 runningQueries.remove(query);

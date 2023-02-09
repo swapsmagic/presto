@@ -13,7 +13,6 @@
  */
 package com.facebook.presto.resourcemanager;
 
-import com.facebook.presto.execution.resourceGroups.InternalResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupManager;
 import com.facebook.presto.execution.resourceGroups.ResourceGroupRuntimeInfo;
 import com.facebook.presto.memory.ClusterMemoryPool;
@@ -132,8 +131,7 @@ public class ResourceManagerClusterStateProvider
                 memoryPoolInfoRefreshDuration,
                 isReservedPoolEnabled,
                 scheduledExecutorService,
-                null
-                );
+                null);
     }
 
     public ResourceManagerClusterStateProvider(

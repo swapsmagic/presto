@@ -28,7 +28,6 @@ import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
-import org.apache.http.client.methods.RequestBuilder;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.ThreadSafe;
@@ -448,11 +447,9 @@ class StatementClientV1
 
         Request request;
 
-        if (method.equals("POST"))
-        {
+        if (method.equals("POST")) {
             Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));
             request = buildQueryRequest(HttpUrl.get(nextUri));
-
         }
         else {
             Request.Builder requestBuider = prepareRequest(HttpUrl.get(nextUri));

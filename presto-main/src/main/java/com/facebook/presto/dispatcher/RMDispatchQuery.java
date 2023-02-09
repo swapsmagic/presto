@@ -44,9 +44,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static com.facebook.airlift.concurrent.MoreFutures.addExceptionCallback;
-import static com.facebook.airlift.concurrent.MoreFutures.addSuccessCallback;
-import static com.facebook.airlift.concurrent.MoreFutures.tryGetFutureValue;
 import static com.facebook.presto.execution.QueryState.FAILED;
 import static com.facebook.presto.execution.QueryState.QUEUED;
 import static com.facebook.presto.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;

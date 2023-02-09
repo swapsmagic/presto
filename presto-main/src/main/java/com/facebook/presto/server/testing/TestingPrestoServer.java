@@ -375,8 +375,7 @@ public class TestingPrestoServer
         }
         else if (resourceManager) {
             dispatchManager = null;
-            if(globalResourceGroupEnabled)
-            {
+            if (globalResourceGroupEnabled) {
                 rmDispatchManager = injector.getInstance(RMDispatchManager.class);
                 queryManager = injector.getInstance(QueryManager.class);
                 ResourceGroupManager<?> resourceGroupManager = injector.getInstance(ResourceGroupManager.class);

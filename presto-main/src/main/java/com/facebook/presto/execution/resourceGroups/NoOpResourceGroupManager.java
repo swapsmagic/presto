@@ -75,6 +75,6 @@ public final class NoOpResourceGroupManager
     @Override
     public void finishQuery(String queryId, Optional<ResourceGroupId> resourceGroupId)
     {
-
+        // no-op
     }
 }

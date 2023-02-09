@@ -91,8 +91,7 @@ import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 @ThreadSafe
-public
-class Query
+public class Query
 {
     private static final Logger log = Logger.get(Query.class);
 

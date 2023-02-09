@@ -22,7 +22,6 @@ import com.facebook.presto.client.StatementStats;
 import com.facebook.presto.common.ErrorCode;
 import com.facebook.presto.dispatcher.DispatchExecutor;
 import com.facebook.presto.dispatcher.DispatchInfo;
-import com.facebook.presto.dispatcher.DispatchManager;
 import com.facebook.presto.dispatcher.RMDispatchManager;
 import com.facebook.presto.execution.ExecutionFailureInfo;
 import com.facebook.presto.execution.QueryState;
@@ -724,4 +723,3 @@ public class QueuedStatementResource
         }
     }
 }
-

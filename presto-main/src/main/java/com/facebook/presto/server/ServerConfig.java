@@ -34,7 +34,7 @@ public class ServerConfig
     private boolean enhancedErrorReporting = true;
     private boolean queryResultsCompressionEnabled = true;
 
-    private boolean globalResourceGroupEnabled = false;
+    private boolean globalResourceGroupEnabled;
 
     public boolean isResourceManager()
     {
