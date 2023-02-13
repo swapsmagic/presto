@@ -13,33 +13,22 @@
  */
 package com.facebook.presto.execution.resourceGroups.db;
 
-import com.facebook.presto.execution.resourceGroups.ResourceGroupRuntimeInfo;
 import com.facebook.presto.resourceGroups.db.H2ResourceGroupsDao;
 import com.facebook.presto.spi.QueryId;
-import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
-import com.facebook.presto.spi.security.Identity;
 import com.facebook.presto.tests.DistributedQueryRunner;
 import com.google.common.collect.ImmutableMap;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-import java.util.Map;
-import java.util.Optional;
-
 import static com.facebook.airlift.testing.Closeables.closeQuietly;
 import static com.facebook.presto.execution.QueryState.QUEUED;
-import static com.facebook.presto.execution.QueryState.RUNNING;
-import static com.facebook.presto.execution.TestRMQueryRunnerUtil.cancelQuery;
 import static com.facebook.presto.execution.TestRMQueryRunnerUtil.createQuery;
 import static com.facebook.presto.execution.TestRMQueryRunnerUtil.waitForQueryState;
 import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.adhocSession;
 import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.createQueryRunner;
-import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.dashboardSession;
 import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.getDao;
 import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.getDbConfigUrl;
-import static com.facebook.presto.execution.resourceGroups.db.H2TestUtil.testSession;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 // run single threaded to avoid creating multiple query runners at once
 @Test(singleThreaded = true)
