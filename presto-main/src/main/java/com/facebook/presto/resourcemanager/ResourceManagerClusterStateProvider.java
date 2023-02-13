@@ -129,6 +129,7 @@ public class ResourceManagerClusterStateProvider
                 completedQueryExpirationTimeout,
                 nodeStatusTimeout,
                 memoryPoolInfoRefreshDuration,
+                resourceGroupRuntimeInfoTimeout,
                 isReservedPoolEnabled,
                 scheduledExecutorService,
                 null);
@@ -142,6 +143,7 @@ public class ResourceManagerClusterStateProvider
             Duration completedQueryExpirationTimeout,
             Duration nodeStatusTimeout,
             Duration memoryPoolInfoRefreshDuration,
+            Duration resourceGroupRuntimeInfoTimeout,
             boolean isReservedPoolEnabled,
             ScheduledExecutorService scheduledExecutorService,
             ResourceGroupManager resourceGroupManager)
