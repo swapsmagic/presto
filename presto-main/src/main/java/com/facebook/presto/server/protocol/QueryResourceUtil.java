@@ -186,7 +186,7 @@ public final class QueryResourceUtil
         QueryResults queryResults = new QueryResults(
                 queryId.toString(),
                 prependUri(infoUri, xPrestoPrefixUri),
-                prependUri(uri, xPrestoPrefixUri),
+                prependUri(coordinator.getInternalUri(), xPrestoPrefixUri),
                 prependUri(nextUri, xPrestoPrefixUri),
                 "POST",
                 null,
