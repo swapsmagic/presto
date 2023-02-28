@@ -50,7 +50,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.facebook.airlift.http.client.HttpUriBuilder.uriBuilderFrom;
 import static com.facebook.airlift.json.JsonCodec.jsonCodec;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_ADDED_PREPARE;
 import static com.facebook.presto.client.PrestoHeaders.PRESTO_ADDED_SESSION_FUNCTION;
@@ -181,7 +180,7 @@ public final class QueryResourceUtil
                 .port(coordinator.getHostAndPort().getPort())
                 .build();
 
-        URI uri = uriBuilderFrom(uriInfo.getBaseUri()).host(coordinator.getHost()).port(coordinator.getHostAndPort().getPort()).build();
+        URI uri = null; //uriBuilderFrom(uriInfo.getBaseUri()).host(coordinator.getHost()).port(coordinator.getHostAndPort().getPort()).build();
 
         QueryResults queryResults = new QueryResults(
                 queryId.toString(),
