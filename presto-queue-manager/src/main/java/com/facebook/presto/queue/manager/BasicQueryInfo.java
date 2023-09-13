@@ -16,57 +16,47 @@ package com.facebook.presto.queue.manager;
 import com.facebook.drift.annotations.ThriftConstructor;
 import com.facebook.drift.annotations.ThriftField;
 import com.facebook.drift.annotations.ThriftStruct;
-import com.facebook.presto.Session;
-import com.facebook.presto.SessionRepresentation;
 import com.facebook.presto.common.ErrorCode;
 import com.facebook.presto.common.ErrorType;
 import com.facebook.presto.common.resourceGroups.QueryType;
-import com.facebook.presto.execution.ExecutionFailureInfo;
-import com.facebook.presto.execution.QueryInfo;
-import com.facebook.presto.execution.QueryState;
 import com.facebook.presto.spi.PrestoWarning;
 import com.facebook.presto.spi.QueryId;
 import com.facebook.presto.spi.memory.MemoryPoolId;
 import com.facebook.presto.spi.resourceGroups.ResourceGroupId;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.ImmutableList;
 
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
 
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 
-import static com.facebook.presto.execution.QueryState.FAILED;
-import static com.facebook.presto.memory.LocalMemoryManager.GENERAL_POOL;
-import static com.facebook.presto.server.BasicQueryStats.immediateFailureQueryStats;
-import static com.facebook.presto.util.QueryInfoUtils.computeQueryHash;
-import static com.google.common.base.MoreObjects.toStringHelper;
+
 import static java.util.Objects.requireNonNull;
+import static com.google.common.base.MoreObjects.toStringHelper;
 
 /**
  * Lightweight version of QueryInfo. Parts of the web UI depend on the fields
  * being named consistently across these classes.
  */
 @ThriftStruct
-@Immutable
+//@Immutable
 public class BasicQueryInfo
 {
     private final QueryId queryId;
-    private final SessionRepresentation session;
+//    private final SessionRepresentation session;
     private final Optional<ResourceGroupId> resourceGroupId;
-    private final QueryState state;
+//    private final QueryState state;
     private final MemoryPoolId memoryPool;
     private final boolean scheduled;
     private final URI self;
     private final String query;
-    private final String queryHash;
-    private final BasicQueryStats queryStats;
+//    private final String queryHash;
+//    private final BasicQueryStats queryStats;
     private final ErrorType errorType;
     private final ErrorCode errorCode;
-    private final ExecutionFailureInfo failureInfo;
+//    private final ExecutionFailureInfo failureInfo;
     private final Optional<QueryType> queryType;
     private final List<PrestoWarning> warnings;
     private final Optional<String> preparedQuery;
@@ -75,121 +65,96 @@ public class BasicQueryInfo
     @JsonCreator
     public BasicQueryInfo(
             @JsonProperty("queryId") QueryId queryId,
-            @JsonProperty("session") SessionRepresentation session,
             @JsonProperty("resourceGroupId") Optional<ResourceGroupId> resourceGroupId,
-            @JsonProperty("state") QueryState state,
             @JsonProperty("memoryPool") MemoryPoolId memoryPool,
             @JsonProperty("scheduled") boolean scheduled,
             @JsonProperty("self") URI self,
             @JsonProperty("query") String query,
-            @JsonProperty("queryStats") BasicQueryStats queryStats,
             @JsonProperty("errorType") ErrorType errorType,
             @JsonProperty("errorCode") ErrorCode errorCode,
-            @JsonProperty("failureInfo") ExecutionFailureInfo failureInfo,
             @JsonProperty("queryType") Optional<QueryType> queryType,
             @JsonProperty("warnings") List<PrestoWarning> warnings,
             @JsonProperty("preparedQuery") Optional<String> preparedQuery)
     {
         this.queryId = requireNonNull(queryId, "queryId is null");
-        this.session = requireNonNull(session, "session is null");
+//        this.session = requireNonNull(session, "session is null");
         this.resourceGroupId = requireNonNull(resourceGroupId, "resourceGroupId is null");
-        this.state = requireNonNull(state, "state is null");
+//        this.state = requireNonNull(state, "state is null");
         this.memoryPool = memoryPool;
         this.errorType = errorType;
         this.errorCode = errorCode;
-        this.failureInfo = failureInfo;
+//        this.failureInfo = failureInfo;
         this.scheduled = scheduled;
         this.self = requireNonNull(self, "self is null");
         this.query = requireNonNull(query, "query is null");
-        this.queryHash = computeQueryHash(query);
-        this.queryStats = requireNonNull(queryStats, "queryStats is null");
+//        this.queryHash = computeQueryHash(query);
+//        this.queryStats = requireNonNull(queryStats, "queryStats is null");
         this.queryType = requireNonNull(queryType, "queryType is null");
         this.warnings = requireNonNull(warnings, "warnings is null");
         this.preparedQuery = requireNonNull(preparedQuery, "preparedQuery is null");
     }
 
-    public BasicQueryInfo(
-            QueryId queryId,
-            SessionRepresentation session,
-            Optional<ResourceGroupId> resourceGroupId,
-            QueryState state,
-            MemoryPoolId memoryPool,
-            boolean scheduled,
-            URI self,
-            String query,
-            BasicQueryStats queryStats,
-            ExecutionFailureInfo failureInfo,
-            Optional<QueryType> queryType,
-            List<PrestoWarning> warnings,
-            Optional<String> preparedQuery)
-    {
-        this(
-                queryId,
-                session,
-                resourceGroupId,
-                state,
-                memoryPool,
-                scheduled,
-                self,
-                query,
-                queryStats,
-                (failureInfo != null && failureInfo.getErrorCode() != null) ? failureInfo.getErrorCode().getType() : null,
-                failureInfo != null ? failureInfo.getErrorCode() : null,
-                failureInfo,
-                queryType,
-                warnings,
-                preparedQuery);
-    }
+//    public BasicQueryInfo(
+//            QueryId queryId,
+//            Optional<ResourceGroupId> resourceGroupId,
+//            MemoryPoolId memoryPool,
+//            boolean scheduled,
+//            URI self,
+//            String query,
+//            Optional<QueryType> queryType,
+//            List<PrestoWarning> warnings,
+//            Optional<String> preparedQuery)
+//    {
+//        this(
+//                queryId,
+//                resourceGroupId,
+//                memoryPool,
+//                scheduled,
+//                self,
+//                query,
+//                queryType,
+//                warnings,
+//                preparedQuery);
+//    }
 
-    public BasicQueryInfo(QueryInfo queryInfo)
-    {
-        this(queryInfo.getQueryId(),
-                queryInfo.getSession(),
-                queryInfo.getResourceGroupId(),
-                queryInfo.getState(),
-                queryInfo.getMemoryPool(),
-                queryInfo.isScheduled(),
-                queryInfo.getSelf(),
-                queryInfo.getQuery(),
-                new BasicQueryStats(queryInfo.getQueryStats()),
-                queryInfo.getErrorType(),
-                queryInfo.getErrorCode(),
-                queryInfo.getFailureInfo(),
-                queryInfo.getQueryType(),
-                queryInfo.getWarnings(),
-                queryInfo.getPreparedQuery());
-    }
+//    public BasicQueryInfo(QueryInfo queryInfo)
+//    {
+//        this(queryInfo.getQueryId(),
+//                queryInfo.getResourceGroupId(),
+//                queryInfo.getMemoryPool(),
+//                queryInfo.isScheduled(),
+//                queryInfo.getSelf(),
+//                queryInfo.getQuery(),
+//                queryInfo.getErrorType(),
+//                queryInfo.getErrorCode(),
+//                queryInfo.getQueryType(),
+//                queryInfo.getWarnings(),
+//                queryInfo.getPreparedQuery());
+//    }
 
-    public static BasicQueryInfo immediateFailureQueryInfo(Session session, String query, URI self, Optional<ResourceGroupId> resourceGroupId, ExecutionFailureInfo failure)
-    {
-        return new BasicQueryInfo(
-                session.getQueryId(),
-                session.toSessionRepresentation(),
-                resourceGroupId,
-                FAILED,
-                GENERAL_POOL,
-                false,
-                self,
-                query,
-                immediateFailureQueryStats(),
-                failure,
-                Optional.empty(),
-                ImmutableList.of(),
-                Optional.empty());
-    }
+//    public static BasicQueryInfo immediateFailureQueryInfo(Session session, String query, URI self, Optional<ResourceGroupId> resourceGroupId, ExecutionFailureInfo failure)
+//    {
+//        return new BasicQueryInfo(
+//                session.getQueryId(),
+//                session.toSessionRepresentation(),
+//                resourceGroupId,
+//                FAILED,
+//                GENERAL_POOL,
+//                false,
+//                self,
+//                query,
+//                immediateFailureQueryStats(),
+//                failure,
+//                Optional.empty(),
+//                ImmutableList.of(),
+//                Optional.empty());
+//    }
 
     @ThriftField(1)
     @JsonProperty
     public QueryId getQueryId()
     {
         return queryId;
-    }
-
-    @ThriftField(2)
-    @JsonProperty
-    public SessionRepresentation getSession()
-    {
-        return session;
     }
 
     @ThriftField(3)
@@ -199,12 +164,6 @@ public class BasicQueryInfo
         return resourceGroupId;
     }
 
-    @ThriftField(4)
-    @JsonProperty
-    public QueryState getState()
-    {
-        return state;
-    }
 
     @ThriftField(5)
     @JsonProperty
@@ -234,19 +193,13 @@ public class BasicQueryInfo
         return query;
     }
 
-    @ThriftField(9)
-    @JsonProperty
-    public String getQueryHash()
-    {
-        return queryHash;
-    }
+//    @ThriftField(9)
+//    @JsonProperty
+//    public String getQueryHash()
+//    {
+//        return queryHash;
+//    }
 
-    @ThriftField(10)
-    @JsonProperty
-    public BasicQueryStats getQueryStats()
-    {
-        return queryStats;
-    }
 
     @ThriftField(11)
     @Nullable
@@ -264,13 +217,6 @@ public class BasicQueryInfo
         return errorCode;
     }
 
-    @ThriftField(13)
-    @Nullable
-    @JsonProperty
-    public ExecutionFailureInfo getFailureInfo()
-    {
-        return failureInfo;
-    }
 
     @ThriftField(14)
     @JsonProperty
@@ -298,7 +244,7 @@ public class BasicQueryInfo
     {
         return toStringHelper(this)
                 .add("queryId", queryId)
-                .add("state", state)
+//                .add("state", state)
                 .toString();
     }
 }
