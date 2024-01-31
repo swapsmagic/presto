@@ -24,6 +24,38 @@
 
 namespace facebook::presto {
 
+// HTTP connection pool for a specific endpoint with its associated event base.
+// All the operations on the SessionPool must be performed on the corresponding
+// EventBase.
+struct ConnectionPool {
+  folly::EventBase* eventBase;
+  std::unique_ptr<proxygen::SessionPool> sessionPool;
+};
+
+// Connection pools used by HTTP client in PrestoExchangeSource.  It should be
+// held living longer than all the PrestoExchangeSources and will be passed when
+// we creating the exchange sources.
+class ConnectionPools {
+ public:
+  ~ConnectionPools() {
+    destroy();
+  }
+
+  const ConnectionPool& get(
+      const proxygen::Endpoint& endpoint,
+      folly::IOThreadPoolExecutor* ioExecutor);
+
+  void destroy();
+
+ private:
+  folly::Synchronized<folly::F14FastMap<
+      proxygen::Endpoint,
+      std::unique_ptr<ConnectionPool>,
+      proxygen::EndpointHash,
+      proxygen::EndpointEqual>>
+      pools_;
+};
+
 class PrestoExchangeSource : public velox::exec::ExchangeSource {
  public:
   class RetryState {
@@ -48,10 +80,14 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
           .count();
     }
 
+    int64_t durationMs() const {
+      return velox::getCurrentTimeMs() - startMs_;
+    }
+
     // Returns whether we have exhausted all retries. We only retry if we spent
     // less than maxWaitMs_ time after we first started.
     bool isExhausted() const {
-      return velox::getCurrentTimeMs() - startMs_ > maxWaitMs_;
+      return durationMs() > maxWaitMs_;
     }
 
    private:
@@ -67,11 +103,12 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   PrestoExchangeSource(
       const folly::Uri& baseUri,
       int destination,
-      std::shared_ptr<velox::exec::ExchangeQueue> queue,
+      const std::shared_ptr<velox::exec::ExchangeQueue>& queue,
       velox::memory::MemoryPool* pool,
-      const std::shared_ptr<folly::IOThreadPoolExecutor>& executor,
-      const std::string& clientCertAndKeyPath_ = "",
-      const std::string& ciphers_ = "");
+      folly::CPUThreadPoolExecutor* driverExecutor,
+      folly::EventBase* ioEventBase,
+      proxygen::SessionPool* sessionPool,
+      folly::SSLContextPtr sslContext);
 
   /// Returns 'true' is there is no request in progress, this source is not at
   /// end and most recent request hasn't failed. Transitions into
@@ -91,24 +128,33 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   /// This method should not be called concurrently. The caller must receive
   /// 'true' from shouldRequestLocked() before calling this method. The caller
   /// should not hold a lock over queue's mutex when making this call.
-  velox::ContinueFuture request(uint32_t maxBytes) override;
+  folly::SemiFuture<Response> request(
+      uint32_t maxBytes,
+      uint32_t maxWaitSeconds) override;
 
-  static std::unique_ptr<ExchangeSource> create(
+  // Create an exchange source using pooled connections.
+  static std::shared_ptr<PrestoExchangeSource> create(
       const std::string& url,
       int destination,
-      std::shared_ptr<velox::exec::ExchangeQueue> queue,
-      velox::memory::MemoryPool* pool,
-      std::shared_ptr<folly::IOThreadPoolExecutor> executor);
+      const std::shared_ptr<velox::exec::ExchangeQueue>& queue,
+      velox::memory::MemoryPool* memoryPool,
+      folly::CPUThreadPoolExecutor* cpuExecutor,
+      folly::IOThreadPoolExecutor* ioExecutor,
+      ConnectionPools* connectionPools,
+      folly::SSLContextPtr sslContext);
 
   /// Completes the future returned by 'request()' if it hasn't completed
   /// already.
   void close() override;
 
   folly::F14FastMap<std::string, int64_t> stats() const override {
-    return {{"prestoExchangeSource.numPages", numPages_}};
+    return {
+        {"prestoExchangeSource.numPages", numPages_},
+        {"prestoExchangeSource.totalBytes", totalBytes_},
+    };
   }
 
-  std::string toJsonString() override {
+  folly::dynamic toJson() override {
     folly::dynamic obj = folly::dynamic::object;
     obj["taskId"] = taskId_;
     obj["destination"] = destination_;
@@ -117,10 +163,11 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
     obj["basePath"] = basePath_;
     obj["host"] = host_;
     obj["numPages"] = numPages_;
+    obj["totalBytes"] = totalBytes_;
     obj["closed"] = std::to_string(closed_);
-    obj["abortResultsSucceeded"] = std::to_string(abortResultsSucceeded_);
+    obj["abortResultsIssued"] = std::to_string(abortResultsIssued_);
     obj["atEnd"] = atEnd_;
-    return folly::toPrettyJson(obj);
+    return obj;
   }
 
   int testingFailedAttempts() const {
@@ -146,7 +193,7 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   static void testingClearMemoryUsage();
 
  private:
-  void doRequest(int64_t delayMs, uint32_t maxBytes);
+  void doRequest(int64_t delayMs, uint32_t maxBytes, uint32_t maxWaitSeconds);
 
   /// Handles successful, possibly empty, response. Adds received data to the
   /// queue. If received an end marker, notifies the queue by adding null page.
@@ -166,12 +213,16 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   void processDataError(
       const std::string& path,
       uint32_t maxBytes,
-      const std::string& error,
-      bool retry = true);
+      uint32_t maxWaitSeconds,
+      const std::string& error);
 
   void acknowledgeResults(int64_t ackSequence);
 
   void abortResults();
+
+  /// Send abort results after specified delay. This function is called
+  /// multiple times by abortResults for retries.
+  void doAbortResults(int64_t delayMs);
 
   /// Completes the future returned from 'request()' if it hasn't completed
   /// already.
@@ -196,19 +247,22 @@ class PrestoExchangeSource : public velox::exec::ExchangeSource {
   const std::string basePath_;
   const std::string host_;
   const uint16_t port_;
-  const std::string clientCertAndKeyPath_;
-  const std::string ciphers_;
-  const std::shared_ptr<folly::IOThreadPoolExecutor> exchangeExecutor_;
+  const folly::SSLContextPtr sslContext_;
+  const bool immediateBufferTransfer_;
+
+  folly::CPUThreadPoolExecutor* const driverExecutor_;
 
   std::shared_ptr<http::HttpClient> httpClient_;
-  RetryState retryState_;
+  RetryState dataRequestRetryState_;
+  RetryState abortRetryState_;
   int failedAttempts_;
   // The number of pages received from this presto exchange source.
   uint64_t numPages_{0};
+  uint64_t totalBytes_{0};
   std::atomic_bool closed_{false};
-  // A boolean indicating whether abortResults() call was issued and was
-  // successfully processed by the remote server.
-  std::atomic_bool abortResultsSucceeded_{false};
-  velox::ContinuePromise promise_{velox::ContinuePromise::makeEmpty()};
+  // A boolean indicating whether abortResults() call was issued
+  std::atomic_bool abortResultsIssued_{false};
+  velox::VeloxPromise<Response> promise_{
+      velox::VeloxPromise<Response>::makeEmpty()};
 };
 } // namespace facebook::presto

@@ -19,7 +19,8 @@ add_executable(
   PrestoTaskTest.cpp
   QueryContextCacheTest.cpp
   ServerOperationTest.cpp
-  TaskManagerTest.cpp)
+  TaskManagerTest.cpp
+  QueryContextManagerTest.cpp)
 
 add_test(
   NAME presto_server_test
@@ -40,9 +41,13 @@ target_link_libraries(
   velox_aggregates
   velox_hive_partition_function
   ${RE2}
+  Folly::folly
   gmock
   gtest
   gtest_main)
+
+set_property(TARGET presto_server_test PROPERTY JOB_POOL_LINK
+                                                presto_link_job_pool)
 
 if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
   add_executable(presto_server_remote_function_test

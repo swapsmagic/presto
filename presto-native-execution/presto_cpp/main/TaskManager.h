@@ -19,7 +19,7 @@
 #include "presto_cpp/main/QueryContextManager.h"
 #include "presto_cpp/main/http/HttpServer.h"
 #include "presto_cpp/presto_protocol/presto_protocol.h"
-#include "velox/exec/PartitionedOutputBufferManager.h"
+#include "velox/exec/OutputBufferManager.h"
 
 namespace facebook::presto {
 
@@ -30,7 +30,10 @@ struct DriverCountStats {
 
 class TaskManager {
  public:
-  TaskManager();
+  TaskManager(
+      folly::Executor* driverExecutor,
+      folly::Executor* httpSrvExecutor,
+      folly::Executor* spillerExecutor);
 
   /// Invoked by Presto server shutdown to wait for all the tasks to complete
   /// and cleanup the completed tasks.
@@ -41,6 +44,8 @@ class TaskManager {
   void setNodeId(const std::string& nodeId);
 
   void setBaseSpillDirectory(const std::string& baseSpillDirectory);
+
+  bool emptyBaseSpillDirectory() const;
 
   /// Sets the time (ms) that a task is considered to be old for cleanup since
   /// its completion.
@@ -101,7 +106,7 @@ class TaskManager {
 
   folly::Future<std::unique_ptr<Result>> getResults(
       const protocol::TaskId& taskId,
-      long bufferId,
+      long destination,
       long token,
       protocol::DataSize maxSize,
       protocol::Duration maxWait,
@@ -120,7 +125,7 @@ class TaskManager {
   std::string toString() const;
 
   QueryContextManager* getQueryContextManager() {
-    return &queryContextManager_;
+    return queryContextManager_.get();
   }
 
   /// Make upto target task threads to yield. Task candidate must have been on
@@ -140,6 +145,14 @@ class TaskManager {
   // Returns array with number of tasks for each of five TaskState (enum defined
   // in exec/Task.h).
   std::array<size_t, 5> getTaskNumbers(size_t& numTasks) const;
+
+  /// Populate the blocked tasks (failing to take lock on the mutex), and long
+  /// running operator calls across all drivers in all tasks.  Returns false if
+  /// a lock on the taskMap cannot be taken, otherwise returns true.
+  bool getLongRunningOpCalls(
+      size_t thresholdDurationMs,
+      std::vector<std::string>& deadlockedTasks,
+      std::vector<velox::exec::Task::OpCallInfo>& opCalls) const;
 
   /// Build directory path for spilling for the given task.
   /// Always returns non-empty string.
@@ -172,11 +185,12 @@ class TaskManager {
 
   std::string baseUri_;
   std::string nodeId_;
-  std::string baseSpillDir_;
+  folly::Synchronized<std::string> baseSpillDir_;
   int32_t oldTaskCleanUpMs_;
-  std::shared_ptr<velox::exec::PartitionedOutputBufferManager> bufferManager_;
+  std::shared_ptr<velox::exec::OutputBufferManager> bufferManager_;
   folly::Synchronized<TaskMap> taskMap_;
-  QueryContextManager queryContextManager_;
+  std::unique_ptr<QueryContextManager> queryContextManager_;
+  folly::Executor* httpSrvCpuExecutor_;
 };
 
 } // namespace facebook::presto

@@ -17,6 +17,7 @@ import com.facebook.presto.common.plan.PlanCanonicalizationStrategy;
 import com.facebook.presto.common.resourceGroups.QueryType;
 import com.facebook.presto.spi.PrestoWarning;
 import com.facebook.presto.spi.plan.PlanNodeId;
+import com.facebook.presto.spi.prestospark.PrestoSparkExecutionContext;
 import com.facebook.presto.spi.statistics.PlanStatisticsWithSourceInfo;
 
 import java.time.Instant;
@@ -48,9 +49,11 @@ public class QueryCompletedEvent
     private final Instant endTime;
     private final Optional<String> expandedQuery;
     private final List<PlanOptimizerInformation> optimizerInformation;
+    private final List<CTEInformation> cteInformationList;
     private final Set<String> scalarFunctions;
     private final Set<String> aggregateFunctions;
     private final Set<String> windowsFunctions;
+    private final Optional<PrestoSparkExecutionContext> prestoSparkExecutionContext;
 
     public QueryCompletedEvent(
             QueryMetadata metadata,
@@ -71,9 +74,11 @@ public class QueryCompletedEvent
             Map<PlanNodeId, Map<PlanCanonicalizationStrategy, String>> planNodeHash,
             Optional<String> expandedQuery,
             List<PlanOptimizerInformation> optimizerInformation,
+            List<CTEInformation> cteInformationList,
             Set<String> scalarFunctions,
             Set<String> aggregateFunctions,
-            Set<String> windowsFunctions)
+            Set<String> windowsFunctions,
+            Optional<PrestoSparkExecutionContext> prestoSparkExecutionContext)
     {
         this.metadata = requireNonNull(metadata, "metadata is null");
         this.statistics = requireNonNull(statistics, "statistics is null");
@@ -93,9 +98,11 @@ public class QueryCompletedEvent
         this.planStatisticsWritten = requireNonNull(planStatisticsWritten, "planStatisticsWritten is null");
         this.expandedQuery = requireNonNull(expandedQuery, "expandedQuery is null");
         this.optimizerInformation = requireNonNull(optimizerInformation, "optimizerInformation is null");
+        this.cteInformationList = requireNonNull(cteInformationList, "cteInformationList is null");
         this.scalarFunctions = requireNonNull(scalarFunctions, "scalarFunctions is null");
         this.aggregateFunctions = requireNonNull(aggregateFunctions, "aggregateFunctions is null");
         this.windowsFunctions = requireNonNull(windowsFunctions, "windowsFunctions is null");
+        this.prestoSparkExecutionContext = requireNonNull(prestoSparkExecutionContext, "prestoSparkExecutionContext is null");
     }
 
     public QueryMetadata getMetadata()
@@ -188,6 +195,11 @@ public class QueryCompletedEvent
         return optimizerInformation;
     }
 
+    public List<CTEInformation> getCteInformationList()
+    {
+        return cteInformationList;
+    }
+
     public Set<String> getScalarFunctions()
     {
         return scalarFunctions;
@@ -201,5 +213,10 @@ public class QueryCompletedEvent
     public Set<String> getWindowsFunctions()
     {
         return windowsFunctions;
+    }
+
+    public Optional<PrestoSparkExecutionContext> getPrestoSparkExecutionContext()
+    {
+        return prestoSparkExecutionContext;
     }
 }

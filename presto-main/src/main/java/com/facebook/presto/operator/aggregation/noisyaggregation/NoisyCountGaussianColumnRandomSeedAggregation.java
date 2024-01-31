@@ -24,7 +24,6 @@ import com.facebook.presto.metadata.SqlAggregationFunction;
 import com.facebook.presto.operator.aggregation.AccumulatorCompiler;
 import com.facebook.presto.operator.aggregation.BuiltInAggregationFunctionImplementation;
 import com.facebook.presto.operator.aggregation.state.StateCompiler;
-import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.function.AccumulatorStateFactory;
 import com.facebook.presto.spi.function.AccumulatorStateSerializer;
 import com.facebook.presto.spi.function.aggregation.Accumulator;
@@ -35,14 +34,14 @@ import com.google.common.collect.ImmutableList;
 
 import java.lang.invoke.MethodHandle;
 import java.util.List;
-import java.util.Random;
 
 import static com.facebook.presto.common.type.BigintType.BIGINT;
 import static com.facebook.presto.common.type.DoubleType.DOUBLE;
 import static com.facebook.presto.common.type.TypeSignature.parseTypeSignature;
 import static com.facebook.presto.operator.aggregation.AggregationUtils.generateAggregationName;
-import static com.facebook.presto.operator.aggregation.noisyaggregation.NoisyCountGaussianColumnAggregationUtils.computeNoisyCount;
-import static com.facebook.presto.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.NoisyCountAggregationUtils.combineStates;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.NoisyCountAggregationUtils.updateState;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.NoisyCountAggregationUtils.writeNoisyCountOutput;
 import static com.facebook.presto.spi.function.Signature.typeVariable;
 import static com.facebook.presto.spi.function.aggregation.AggregationMetadata.ParameterMetadata;
 import static com.facebook.presto.spi.function.aggregation.AggregationMetadata.ParameterMetadata.ParameterType.BLOCK_INDEX;
@@ -56,9 +55,9 @@ public class NoisyCountGaussianColumnRandomSeedAggregation
 {
     public static final NoisyCountGaussianColumnRandomSeedAggregation NOISY_COUNT_GAUSSIAN_RANDOM_SEED_AGGREGATION = new NoisyCountGaussianColumnRandomSeedAggregation();
     private static final String NAME = "noisy_count_gaussian";
-    private static final MethodHandle INPUT_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "input", CountScaleRandomSeedState.class, Block.class, Block.class, Block.class, int.class);
-    private static final MethodHandle COMBINE_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "combine", CountScaleRandomSeedState.class, CountScaleRandomSeedState.class);
-    private static final MethodHandle OUTPUT_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "output", CountScaleRandomSeedState.class, BlockBuilder.class);
+    private static final MethodHandle INPUT_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "input", NoisyCountState.class, Block.class, Block.class, Block.class, int.class);
+    private static final MethodHandle COMBINE_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "combine", NoisyCountState.class, NoisyCountState.class);
+    private static final MethodHandle OUTPUT_FUNCTION = methodHandle(NoisyCountGaussianColumnRandomSeedAggregation.class, "output", NoisyCountState.class, BlockBuilder.class);
 
     public NoisyCountGaussianColumnRandomSeedAggregation()
     {
@@ -86,8 +85,8 @@ public class NoisyCountGaussianColumnRandomSeedAggregation
     {
         DynamicClassLoader classLoader = new DynamicClassLoader(NoisyCountGaussianColumnRandomSeedAggregation.class.getClassLoader());
 
-        AccumulatorStateSerializer<CountScaleRandomSeedState> stateSerializer = StateCompiler.generateStateSerializer(CountScaleRandomSeedState.class, classLoader);
-        AccumulatorStateFactory<CountScaleRandomSeedState> stateFactory = StateCompiler.generateStateFactory(CountScaleRandomSeedState.class, classLoader);
+        AccumulatorStateSerializer<NoisyCountState> stateSerializer = StateCompiler.generateStateSerializer(NoisyCountState.class, classLoader);
+        AccumulatorStateFactory<NoisyCountState> stateFactory = StateCompiler.generateStateFactory(NoisyCountState.class, classLoader);
         Type intermediateType = stateSerializer.getSerializedType();
 
         List<Type> inputTypes = ImmutableList.of(type, DOUBLE, BIGINT);
@@ -99,7 +98,7 @@ public class NoisyCountGaussianColumnRandomSeedAggregation
                 COMBINE_FUNCTION,
                 OUTPUT_FUNCTION,
                 ImmutableList.of(new AccumulatorStateDescriptor(
-                        CountScaleRandomSeedState.class,
+                        NoisyCountState.class,
                         stateSerializer,
                         stateFactory)),
                 BIGINT);
@@ -126,34 +125,21 @@ public class NoisyCountGaussianColumnRandomSeedAggregation
                 new ParameterMetadata(BLOCK_INDEX));
     }
 
-    public static void input(CountScaleRandomSeedState state, Block valueBlock, Block noiseScaleBlock, Block randomSeedBlock, int index)
+    public static void input(NoisyCountState state, Block valueBlock, Block noiseScaleBlock, Block randomSeedBlock, int index)
     {
         double noiseScale = DOUBLE.getDouble(noiseScaleBlock, index);
-        if (noiseScale < 0) {
-            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "Noise scale must be >= 0");
-        }
-        // Update count and retain scale and random seed
-        state.setCount(state.getCount() + 1);
-        state.setNoiseScale(noiseScale);
-        state.setRandomSeed(BIGINT.getLong(randomSeedBlock, index));
+        long randomSeed = BIGINT.getLong(randomSeedBlock, index);
+
+        updateState(state, noiseScale, randomSeed);
     }
 
-    public static void combine(CountScaleRandomSeedState state, CountScaleRandomSeedState otherState)
+    public static void combine(NoisyCountState state, NoisyCountState otherState)
     {
-        state.setCount(state.getCount() + otherState.getCount());
-        state.setNoiseScale(state.getNoiseScale() > 0 ? state.getNoiseScale() : otherState.getNoiseScale()); // noise scale should be > 0
-        state.setRandomSeed(otherState.getRandomSeed());
+        combineStates(state, otherState);
     }
 
-    public static void output(CountScaleRandomSeedState state, BlockBuilder out)
+    public static void output(NoisyCountState state, BlockBuilder out)
     {
-        if (state.getCount() == 0) {
-            out.appendNull();
-            return;
-        }
-
-        Random random = new Random(state.getRandomSeed());
-        long noisyCountFixedSignAndType = computeNoisyCount(state.getCount(), state.getNoiseScale(), random);
-        BIGINT.writeLong(out, noisyCountFixedSignAndType);
+        writeNoisyCountOutput(state, out);
     }
 }

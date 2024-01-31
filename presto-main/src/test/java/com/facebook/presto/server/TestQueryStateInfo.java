@@ -301,10 +301,12 @@ public class TestQueryStateInfo
                 ImmutableSet.of(),
                 StatsAndCosts.empty(),
                 ImmutableList.of(),
+                ImmutableList.of(),
                 ImmutableSet.of(),
                 ImmutableSet.of(),
                 ImmutableSet.of(),
                 ImmutableList.of(),
-                ImmutableMap.of());
+                ImmutableMap.of(),
+                Optional.empty());
     }
 }

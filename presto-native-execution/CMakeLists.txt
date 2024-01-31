@@ -15,6 +15,7 @@ cmake_minimum_required(VERSION 3.10)
 project(PrestoCpp)
 
 set(VELOX_ROOT ${CMAKE_BINARY_DIR}/velox)
+list(PREPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/velox/CMake")
 
 execute_process(
   COMMAND
@@ -56,6 +57,8 @@ option(PRESTO_ENABLE_PARQUET "Enable Parquet support" OFF)
 option(PRESTO_ENABLE_REMOTE_FUNCTIONS "Enable remote function support" OFF)
 
 option(PRESTO_ENABLE_TESTING "Enable tests" ON)
+
+option(PRESTO_ENABLE_JWT "Enable JWT (JSON Web Token) authentication" OFF)
 
 # Set all Velox options below
 add_compile_definitions(FOLLY_HAVE_INT128_T=1)
@@ -120,13 +123,6 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 find_package(gflags COMPONENTS shared)
 
-find_library(ANTLR4_RUNTIME antlr4-runtime)
-find_path(
-  ANTLR4_RUNTIME_INCLUDE_DIR
-  NAMES antlr4-runtime.h
-  PATH_SUFFIXES antlr4-runtime)
-include_directories(SYSTEM ${ANTLR4_RUNTIME_INCLUDE_DIR})
-
 find_library(GLOG glog)
 
 find_library(FMT fmt)
@@ -164,7 +160,7 @@ find_path(OPT_OPENSSL_DIR NAMES opt/openssl@1.1)
 set(OPENSSL_ROOT_DIR "${OPT_OPENSSL_DIR}/opt/openssl@1.1")
 find_package(OpenSSL REQUIRED)
 
-find_library(LIBSODIUM_LIBRARY NAMES sodium)
+find_package(Sodium REQUIRED)
 find_library(PROXYGEN proxygen)
 find_library(PROXYGEN_HTTP_SERVER proxygenhttpserver)
 find_library(FIZZ fizz)
@@ -194,10 +190,23 @@ set(VELOX_GTEST_INCUDE_DIR "velox/third_party/googletest/googletest/include")
 add_subdirectory(velox)
 
 if(PRESTO_ENABLE_TESTING)
+  set(BUILD_TESTING ON) # some third-party dependency could have disabled this.
   include(CTest) # include after project() but before add_subdirectory()
   include_directories(${VELOX_GTEST_INCUDE_DIR})
 else()
   add_definitions(-DVELOX_DISABLE_GOOGLETEST)
 endif()
+
+if(PRESTO_ENABLE_JWT)
+  add_compile_definitions(PRESTO_ENABLE_JWT)
+endif()
+
+if("${MAX_LINK_JOBS}")
+  set_property(GLOBAL APPEND PROPERTY JOB_POOLS
+                                      "presto_link_job_pool=${MAX_LINK_JOBS}")
+else()
+  set_property(GLOBAL APPEND PROPERTY JOB_POOLS "presto_link_job_pool=8")
+endif()
+set(CMAKE_JOB_POOL_LINK presto_link_job_pool)
 
 add_subdirectory(presto_cpp)

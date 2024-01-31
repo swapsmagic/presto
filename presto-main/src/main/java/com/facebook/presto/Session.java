@@ -32,6 +32,7 @@ import com.facebook.presto.spi.security.SelectedRole;
 import com.facebook.presto.spi.session.ResourceEstimates;
 import com.facebook.presto.spi.session.SessionPropertyConfigurationManager.SystemSessionPropertyConfiguration;
 import com.facebook.presto.spi.tracing.Tracer;
+import com.facebook.presto.sql.analyzer.CTEInformationCollector;
 import com.facebook.presto.sql.planner.optimizations.OptimizerInformationCollector;
 import com.facebook.presto.sql.planner.optimizations.OptimizerResultCollector;
 import com.facebook.presto.transaction.TransactionManager;
@@ -96,6 +97,7 @@ public final class Session
     private final RuntimeStats runtimeStats = new RuntimeStats();
     private final OptimizerInformationCollector optimizerInformationCollector = new OptimizerInformationCollector();
     private final OptimizerResultCollector optimizerResultCollector = new OptimizerResultCollector();
+    private final CTEInformationCollector cteInformationCollector = new CTEInformationCollector();
 
     public Session(
             QueryId queryId,
@@ -159,9 +161,9 @@ public final class Session
         checkArgument(!transactionId.isPresent() || unprocessedCatalogProperties.isEmpty(), "Catalog session properties cannot be set if there is an open transaction");
 
         checkArgument(catalog.isPresent() || !schema.isPresent(), "schema is set but catalog is not");
-        this.context = new AccessControlContext(queryId, clientInfo, source);
         this.tracer = requireNonNull(tracer, "tracer is null");
         this.warningCollector = requireNonNull(warningCollector, "warningCollector is null");
+        this.context = new AccessControlContext(queryId, clientInfo, source, warningCollector);
     }
 
     public QueryId getQueryId()
@@ -325,6 +327,11 @@ public final class Session
     public OptimizerResultCollector getOptimizerResultCollector()
     {
         return optimizerResultCollector;
+    }
+
+    public CTEInformationCollector getCteInformationCollector()
+    {
+        return cteInformationCollector;
     }
 
     public Session beginTransactionId(TransactionId transactionId, TransactionManager transactionManager, AccessControl accessControl)

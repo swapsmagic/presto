@@ -17,6 +17,7 @@ import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.tests.AbstractTestQueryFramework;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.nativeworker.NativeQueryRunnerUtils.createLineitem;
 import static com.facebook.presto.nativeworker.NativeQueryRunnerUtils.createNation;
 import static com.facebook.presto.nativeworker.NativeQueryRunnerUtils.createSupplier;
 
@@ -29,13 +30,14 @@ public abstract class AbstractTestNativeProbabilityFunctionQueries
         QueryRunner queryRunner = (QueryRunner) getExpectedQueryRunner();
         createNation(queryRunner);
         createSupplier(queryRunner);
+        createLineitem(queryRunner);
     }
 
     @Test
     public void testBinomialCDF()
     {
         assertQuery("SELECT binomial_cdf(CAST (nationkey AS INTEGER), 0.1, 0 ) FROM nation WHERE nationkey > 0");
-        assertQuery("SELECT binomial_cdf(CAST (nationkey AS INTEGER), 0.1, CAST (regionkey AS INTEGER)) FROM nation WHERE nationkey > 0;");
+        assertQuery("SELECT binomial_cdf(CAST (nationkey AS INTEGER), 0.1, CAST (regionkey AS INTEGER)) FROM nation WHERE nationkey > 0");
     }
 
     @Test
@@ -103,8 +105,14 @@ public abstract class AbstractTestNativeProbabilityFunctionQueries
     @Test
     public void testLaplaceCDF()
     {
-        assertQuery("SELECT laplace_cdf(acctbal, 0.0, 1.0) FROM supplier WHERE acctbal > 0.0 AND acctbal < 999.0");
+        assertQuery("SELECT laplace_cdf(acctbal, 0.1, 1.0) FROM supplier WHERE acctbal > 0.0 AND acctbal < 999.0");
         assertQuery("SELECT laplace_cdf(1.0, acctbal, 1.5) FROM supplier WHERE acctbal > 0.0 AND acctbal < 999.0");
-        assertQuery("SELECT laplace_cdf(11.0, -1.0, acctbal) FROM supplier WHERE acctbal > 0.0 AND acctbal < 999.0");
+        assertQuery("SELECT laplace_cdf(11.0, 0.1, acctbal) FROM supplier WHERE acctbal > 0.0 AND acctbal < 999.0");
+    }
+
+    @Test
+    public void testPoissonCDF()
+    {
+        assertQuery("SELECT poisson_cdf(quantity, linenumber) FROM lineitem WHERE quantity > 0 AND linenumber >= 0");
     }
 }

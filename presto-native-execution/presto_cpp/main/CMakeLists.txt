@@ -58,6 +58,7 @@ target_link_libraries(
   velox_presto_serializer
   velox_serialization
   velox_time
+  velox_type_parser
   velox_type
   velox_type_fbhive
   velox_type_tz
@@ -65,7 +66,6 @@ target_link_libraries(
   velox_window
   ${RE2}
   ${FOLLY_WITH_DEPENDENCIES}
-  ${ANTLR4_RUNTIME}
   ${GLOG}
   ${GFLAGS_LIBRARIES}
   pthread)
@@ -76,6 +76,9 @@ target_link_libraries(
 # dependencies first followed by FBThrift.
 target_link_libraries(presto_server_lib presto_thrift-cpp2 presto_thrift_extra
                       ${THRIFT_LIBRARY})
+
+set_property(TARGET presto_server_lib PROPERTY JOB_POOL_LINK
+                                               presto_link_job_pool)
 
 add_executable(presto_server PrestoMain.cpp)
 
@@ -94,6 +97,8 @@ if(PRESTO_ENABLE_REMOTE_FUNCTIONS)
                         velox_functions_remote ${FOLLY_WITH_DEPENDENCIES})
   target_link_libraries(presto_server_lib presto_server_remote_function)
 endif()
+
+set_property(TARGET presto_server PROPERTY JOB_POOL_LINK presto_link_job_pool)
 
 if(PRESTO_ENABLE_TESTING)
   add_subdirectory(tests)

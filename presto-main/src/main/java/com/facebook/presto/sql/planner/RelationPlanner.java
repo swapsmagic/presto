@@ -28,6 +28,8 @@ import com.facebook.presto.spi.VariableAllocator;
 import com.facebook.presto.spi.constraints.TableConstraint;
 import com.facebook.presto.spi.plan.AggregationNode;
 import com.facebook.presto.spi.plan.Assignments;
+import com.facebook.presto.spi.plan.CteReferenceNode;
+import com.facebook.presto.spi.plan.EquiJoinClause;
 import com.facebook.presto.spi.plan.ExceptNode;
 import com.facebook.presto.spi.plan.FilterNode;
 import com.facebook.presto.spi.plan.IntersectNode;
@@ -41,6 +43,7 @@ import com.facebook.presto.spi.relation.RowExpression;
 import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.ExpressionUtils;
 import com.facebook.presto.sql.analyzer.Analysis;
+import com.facebook.presto.sql.analyzer.Analysis.NamedQuery;
 import com.facebook.presto.sql.analyzer.Field;
 import com.facebook.presto.sql.analyzer.RelationId;
 import com.facebook.presto.sql.analyzer.RelationType;
@@ -105,8 +108,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
 
+import static com.facebook.presto.SystemSessionProperties.getCteMaterializationStrategy;
 import static com.facebook.presto.SystemSessionProperties.getQueryAnalyzerTimeout;
 import static com.facebook.presto.common.type.TypeUtils.isEnumType;
+import static com.facebook.presto.metadata.MetadataUtil.createQualifiedObjectName;
 import static com.facebook.presto.spi.StandardErrorCode.QUERY_PLANNING_TIMEOUT;
 import static com.facebook.presto.spi.plan.AggregationNode.singleGroupingSet;
 import static com.facebook.presto.spi.plan.ProjectNode.Locality.LOCAL;
@@ -114,6 +119,7 @@ import static com.facebook.presto.sql.analyzer.ExpressionTreeUtils.createSymbolR
 import static com.facebook.presto.sql.analyzer.ExpressionTreeUtils.getSourceLocation;
 import static com.facebook.presto.sql.analyzer.ExpressionTreeUtils.isEqualComparisonExpression;
 import static com.facebook.presto.sql.analyzer.ExpressionTreeUtils.resolveEnumLiteral;
+import static com.facebook.presto.sql.analyzer.FeaturesConfig.CteMaterializationStrategy.ALL;
 import static com.facebook.presto.sql.analyzer.SemanticExceptions.notSupportedException;
 import static com.facebook.presto.sql.planner.PlannerUtils.newVariable;
 import static com.facebook.presto.sql.planner.TranslateExpressionsUtil.toRowExpression;
@@ -170,11 +176,24 @@ class RelationPlanner
     @Override
     protected RelationPlan visitTable(Table node, SqlPlannerContext context)
     {
-        Query namedQuery = analysis.getNamedQuery(node);
+        NamedQuery namedQuery = analysis.getNamedQuery(node);
         Scope scope = analysis.getScope(node);
 
         if (namedQuery != null) {
-            RelationPlan subPlan = process(namedQuery, context);
+            String cteName = node.getName().toString();
+            if (namedQuery.isFromView()) {
+                cteName = createQualifiedObjectName(session, node, node.getName()).toString();
+            }
+            RelationPlan subPlan = process(namedQuery.getQuery(), context);
+            boolean shouldBeMaterialized = getCteMaterializationStrategy(session).equals(ALL);
+            session.getCteInformationCollector().addCTEReference(cteName, namedQuery.isFromView(), shouldBeMaterialized);
+            if (shouldBeMaterialized) {
+                subPlan = new RelationPlan(
+                        new CteReferenceNode(getSourceLocation(node.getLocation()),
+                                idAllocator.getNextId(), subPlan.getRoot(), context.getCteInfo().normalize(analysis, namedQuery.getQuery(), cteName)),
+                        subPlan.getScope(),
+                        subPlan.getFieldMappings());
+            }
 
             // Add implicit coercions if view query produces types that don't match the declared output types
             // of the view (e.g., if the underlying tables referenced by the view changed)
@@ -282,7 +301,7 @@ class RelationPlanner
                 .addAll(rightPlan.getFieldMappings())
                 .build();
 
-        ImmutableList.Builder<JoinNode.EquiJoinClause> equiClauses = ImmutableList.builder();
+        ImmutableList.Builder<EquiJoinClause> equiClauses = ImmutableList.builder();
         List<Expression> complexJoinExpressions = new ArrayList<>();
         List<Expression> postInnerJoinConditions = new ArrayList<>();
 
@@ -350,7 +369,7 @@ class RelationPlanner
                     VariableReferenceExpression leftVariable = leftPlanBuilder.translateToVariable(leftComparisonExpressions.get(i));
                     VariableReferenceExpression rightVariable = rightPlanBuilder.translateToVariable(rightComparisonExpressions.get(i));
 
-                    equiClauses.add(new JoinNode.EquiJoinClause(leftVariable, rightVariable));
+                    equiClauses.add(new EquiJoinClause(leftVariable, rightVariable));
                 }
                 else {
                     Expression leftExpression = leftPlanBuilder.rewrite(leftComparisonExpressions.get(i));
@@ -498,7 +517,7 @@ class RelationPlanner
 
         Analysis.JoinUsingAnalysis joinAnalysis = analysis.getJoinUsing(node);
 
-        ImmutableList.Builder<JoinNode.EquiJoinClause> clauses = ImmutableList.builder();
+        ImmutableList.Builder<EquiJoinClause> clauses = ImmutableList.builder();
 
         Map<Identifier, VariableReferenceExpression> leftJoinColumns = new HashMap<>();
         Map<Identifier, VariableReferenceExpression> rightJoinColumns = new HashMap<>();
@@ -538,7 +557,7 @@ class RelationPlanner
                     context));
             rightJoinColumns.put(identifier, rightOutput);
 
-            clauses.add(new JoinNode.EquiJoinClause(leftOutput, rightOutput));
+            clauses.add(new EquiJoinClause(leftOutput, rightOutput));
         }
 
         ProjectNode leftCoercion = new ProjectNode(idAllocator.getNextId(), left.getRoot(), leftCoercions.build());
@@ -1019,6 +1038,7 @@ class RelationPlanner
                 singleGroupingSet(node.getOutputVariables()),
                 ImmutableList.of(),
                 AggregationNode.Step.SINGLE,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty());
     }

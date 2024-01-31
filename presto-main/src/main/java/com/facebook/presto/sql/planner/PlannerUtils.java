@@ -16,8 +16,10 @@ package com.facebook.presto.sql.planner;
 import com.facebook.presto.Session;
 import com.facebook.presto.common.block.SortOrder;
 import com.facebook.presto.common.function.OperatorType;
+import com.facebook.presto.common.type.ArrayType;
 import com.facebook.presto.common.type.MapType;
 import com.facebook.presto.common.type.Type;
+import com.facebook.presto.common.type.VarcharType;
 import com.facebook.presto.cost.StatsAndCosts;
 import com.facebook.presto.metadata.FunctionAndTypeManager;
 import com.facebook.presto.metadata.Metadata;
@@ -39,6 +41,8 @@ import com.facebook.presto.spi.relation.RowExpression;
 import com.facebook.presto.spi.relation.SpecialFormExpression;
 import com.facebook.presto.spi.relation.VariableReferenceExpression;
 import com.facebook.presto.sql.analyzer.Field;
+import com.facebook.presto.sql.planner.iterative.Lookup;
+import com.facebook.presto.sql.planner.plan.JoinNode;
 import com.facebook.presto.sql.planner.planPrinter.PlanPrinter;
 import com.facebook.presto.sql.relational.FunctionResolution;
 import com.facebook.presto.sql.tree.ComparisonExpression;
@@ -63,9 +67,16 @@ import java.util.Set;
 import static com.facebook.presto.common.function.OperatorType.EQUAL;
 import static com.facebook.presto.common.type.BigintType.BIGINT;
 import static com.facebook.presto.common.type.BooleanType.BOOLEAN;
+import static com.facebook.presto.common.type.DateType.DATE;
+import static com.facebook.presto.common.type.IntegerType.INTEGER;
+import static com.facebook.presto.common.type.VarcharType.VARCHAR;
+import static com.facebook.presto.spi.ConnectorId.isInternalSystemConnector;
+import static com.facebook.presto.spi.plan.JoinDistributionType.REPLICATED;
 import static com.facebook.presto.spi.plan.ProjectNode.Locality.LOCAL;
 import static com.facebook.presto.sql.analyzer.ExpressionTreeUtils.getSourceLocation;
 import static com.facebook.presto.sql.analyzer.TypeSignatureProvider.fromTypes;
+import static com.facebook.presto.sql.planner.iterative.Lookup.noLookup;
+import static com.facebook.presto.sql.planner.optimizations.PlanNodeSearcher.searchFrom;
 import static com.facebook.presto.sql.relational.Expressions.call;
 import static com.facebook.presto.sql.relational.Expressions.constant;
 import static com.facebook.presto.sql.relational.Expressions.variable;
@@ -73,8 +84,10 @@ import static com.facebook.presto.type.TypeUtils.NULL_HASH_CODE;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.Streams.forEachPair;
 import static java.util.Arrays.asList;
+import static java.util.function.Function.identity;
 
 public class PlannerUtils
 {
@@ -178,6 +191,34 @@ public class PlannerUtils
                 LOCAL);
     }
 
+    // Add a projection node, which assignment new value if output exists in variableMap, otherwise identity assignment
+    public static PlanNode addOverrideProjection(PlanNode source, PlanNodeIdAllocator planNodeIdAllocator, Map<VariableReferenceExpression, ? extends RowExpression> variableMap)
+    {
+        // When source node output duplicate variables (at least possible for LateralJoin node), it will fail the assignment builder, skip here
+        if (variableMap.isEmpty() || source.getOutputVariables().stream().noneMatch(variableMap::containsKey)
+                || source.getOutputVariables().stream().distinct().count() != source.getOutputVariables().size()) {
+            return source;
+        }
+        Assignments.Builder assignmentsBuilder = Assignments.builder();
+        assignmentsBuilder.putAll(source.getOutputVariables().stream().collect(toImmutableMap(identity(), x -> variableMap.containsKey(x) ? variableMap.get(x) : x)));
+        return new ProjectNode(source.getSourceLocation(), planNodeIdAllocator.getNextId(), source, assignmentsBuilder.build(), LOCAL);
+    }
+
+    public static PlanNode restrictOutput(PlanNode source, PlanNodeIdAllocator planNodeIdAllocator, List<VariableReferenceExpression> outputVariables)
+    {
+        Assignments.Builder assignments = Assignments.builder();
+        for (VariableReferenceExpression variableReferenceExpression : outputVariables) {
+            assignments.put(variableReferenceExpression, variableReferenceExpression);
+        }
+
+        return new ProjectNode(
+                source.getSourceLocation(),
+                planNodeIdAllocator.getNextId(),
+                source,
+                assignments.build(),
+                LOCAL);
+    }
+
     public static PlanNode projectExpressions(PlanNode source, PlanNodeIdAllocator planNodeIdAllocator, VariableAllocator variableAllocator, List<? extends RowExpression> expressions, List<VariableReferenceExpression> variableMap)
     {
         Assignments.Builder assignments = Assignments.builder();
@@ -241,6 +282,7 @@ public class PlannerUtils
                     groupingSetDescriptor,
                     ImmutableList.of(),
                     AggregationNode.Step.SINGLE,
+                    Optional.empty(),
                     Optional.empty(),
                     Optional.empty()),
                 planNodeIdAllocator,
@@ -419,5 +461,46 @@ public class PlannerUtils
     public static RowExpression coalesce(List<RowExpression> expressions)
     {
         return new SpecialFormExpression(SpecialFormExpression.Form.COALESCE, expressions.get(0).getType(), expressions);
+    }
+
+    public static boolean isSupportedArrayContainsFilter(FunctionResolution functionResolution, RowExpression filterExpression, List<VariableReferenceExpression> left, List<VariableReferenceExpression> right)
+    {
+        List<Type> supportedTypes = ImmutableList.of(BIGINT, INTEGER, VARCHAR, DATE);
+
+        if (filterExpression instanceof CallExpression) {
+            CallExpression callExpression = (CallExpression) filterExpression;
+            if (functionResolution.isArrayContainsFunction(callExpression.getFunctionHandle())) {
+                RowExpression array = callExpression.getArguments().get(0);
+                RowExpression element = callExpression.getArguments().get(1);
+                checkState(array.getType() instanceof ArrayType && ((ArrayType) array.getType()).getElementType().equals(element.getType()));
+                List<VariableReferenceExpression> arrayExpressionColumns = VariablesExtractor.extractAll(array);
+                boolean isSupportedType = supportedTypes.contains(element.getType()) || element.getType() instanceof VarcharType;
+                return (isSupportedType &&
+                        ((left.contains(array) && right.contains(element)) || (right.contains(array) && left.contains(element))));
+            }
+        }
+        return false;
+    }
+
+    public static boolean isNegationExpression(FunctionResolution functionResolution, RowExpression expression)
+    {
+        return expression instanceof CallExpression && functionResolution.isNotFunction(((CallExpression) expression).getFunctionHandle());
+    }
+
+    public static boolean isBroadcastJoin(JoinNode joinNode)
+    {
+        return joinNode.getDistributionType().isPresent() && joinNode.getDistributionType().get() == REPLICATED;
+    }
+
+    public static boolean containsSystemTableScan(PlanNode plan)
+    {
+        return containsSystemTableScan(plan, noLookup());
+    }
+
+    public static boolean containsSystemTableScan(PlanNode plan, Lookup lookup)
+    {
+        return searchFrom(plan, lookup)
+                .where(planNode -> planNode instanceof TableScanNode && isInternalSystemConnector(((TableScanNode) planNode).getTable().getConnectorId()))
+                .matches();
     }
 }

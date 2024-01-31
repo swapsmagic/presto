@@ -30,9 +30,9 @@ import com.facebook.presto.testing.MaterializedRow;
 import com.google.common.collect.ImmutableList;
 import org.testng.annotations.Test;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.BiFunction;
 
 import static com.facebook.presto.block.BlockAssertions.createLongsBlock;
 import static com.facebook.presto.block.BlockAssertions.createRLEBlock;
@@ -58,8 +58,12 @@ import static com.facebook.presto.common.type.UuidType.UUID;
 import static com.facebook.presto.common.type.VarbinaryType.VARBINARY;
 import static com.facebook.presto.common.type.VarcharType.VARCHAR;
 import static com.facebook.presto.operator.aggregation.AggregationTestUtils.assertAggregation;
-import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyCountGaussianAggregationUtils.buildColumnName;
-import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyCountGaussianAggregationUtils.buildData;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.DEFAULT_TEST_STANDARD_DEVIATION;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.buildColumnName;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.buildData;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.createTestValues;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.equalLongAssertion;
+import static com.facebook.presto.operator.aggregation.noisyaggregation.TestNoisyAggregationUtils.withinSomeStdAssertion;
 import static com.facebook.presto.sql.analyzer.TypeSignatureProvider.fromTypes;
 import static com.facebook.presto.type.ArrayParametricType.ARRAY;
 import static com.facebook.presto.type.IntervalDayTimeType.INTERVAL_DAY_TIME;
@@ -77,9 +81,6 @@ public class TestNoisyCountGaussianAggregation
 {
     private static final String FUNCTION_NAME = "noisy_count_gaussian";
     private static final FunctionAndTypeManager FUNCTION_AND_TYPE_MANAGER = MetadataManager.createTestMetadataManager().getFunctionAndTypeManager();
-
-    private static final double DEFAULT_TEST_STANDARD_DEVIATION = 1;
-    private static final BiFunction<Object, Object, Boolean> equalAssertion = (actual, expected) -> new Long(actual.toString()).equals(new Long(expected.toString()));
 
     @Test
     public void testNoisyCountGaussianDefinitions()
@@ -126,7 +127,7 @@ public class TestNoisyCountGaussianAggregation
         int numRows = 1000;
         assertAggregation(
                 noisyCountGaussian,
-                equalAssertion,
+                equalLongAssertion,
                 "Test noisy_count_gaussian(long, noiseScale) with noiseScale=0 which means no noise",
                 new Page(
                         createRLEBlock(1, numRows),
@@ -141,10 +142,10 @@ public class TestNoisyCountGaussianAggregation
         JavaAggregationFunctionImplementation noisyCountGaussian = getFunction(BIGINT, DOUBLE);
 
         int numRows = 1000;
-        List<Long> values = TestNoisyCountGaussianAggregationUtils.createTestValues(numRows, false);
+        List<Long> values = createTestValues(numRows, false, 1L, true);
         assertAggregation(
                 noisyCountGaussian,
-                equalAssertion,
+                equalLongAssertion,
                 "Test noisy_count_gaussian(long, noiseScale, randomSeed) with noiseScale < 0 which we expect an error",
                 new Page(
                         createLongsBlock(values),
@@ -159,10 +160,10 @@ public class TestNoisyCountGaussianAggregation
         JavaAggregationFunctionImplementation noisyCountGaussian = getFunction(BIGINT, DOUBLE);
 
         int numRows = 1000;
-        List<Long> values = TestNoisyCountGaussianAggregationUtils.createTestValues(numRows, true);
+        List<Long> values = createTestValues(numRows, true, 1L, true);
         assertAggregation(
                 noisyCountGaussian,
-                equalAssertion,
+                equalLongAssertion,
                 "Test noisy_count_gaussian(long, noiseScale, randomSeed) with null",
                 new Page(
                         createLongsBlock(values),
@@ -176,14 +177,8 @@ public class TestNoisyCountGaussianAggregation
         // Test COUNT(col, 100)
         JavaAggregationFunctionImplementation noisyCountGaussian = getFunction(BIGINT, DOUBLE);
 
-        BiFunction<Object, Object, Boolean> withinSomeStdAssertion = (actual, expected) -> {
-            long actualValue = Long.parseLong(actual.toString());
-            long expectedValue = Long.parseLong(expected.toString());
-            return expectedValue - 50 * DEFAULT_TEST_STANDARD_DEVIATION <= actualValue && actualValue <= expectedValue + 50 * DEFAULT_TEST_STANDARD_DEVIATION;
-        };
-
         int numRows = 1000;
-        List<Long> values = TestNoisyCountGaussianAggregationUtils.createTestValues(numRows, false);
+        List<Long> values = createTestValues(numRows, false, 1L, true);
         assertAggregation(
                 noisyCountGaussian,
                 withinSomeStdAssertion,
@@ -198,7 +193,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianStarZeroNoiseScaleVsNormalCountStar()
     {
         int numRows = 1000;
-        String data = buildData(numRows, false);
+        String data = buildData(numRows, false, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String query1 = "SELECT COUNT(*) FROM " + data;
         String query2 = "SELECT " + FUNCTION_NAME + "(1, 0) FROM " + data;
         runQueryTestWith2Results(query1, query2);
@@ -208,7 +203,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianStarZeroNoiseScaleVsNormalCountStarWithNull()
     {
         int numRows = 1000;
-        String data = buildData(numRows, true);
+        String data = buildData(numRows, true, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String query1 = "SELECT COUNT(*) FROM " + data;
         String query2 = "SELECT " + FUNCTION_NAME + "(1, 0) FROM " + data;
         runQueryTestWith2Results(query1, query2);
@@ -218,7 +213,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianLongZeroNoiseScaleVsNormalCount()
     {
         int numRows = 1000;
-        String data = buildData(numRows, false);
+        String data = buildData(numRows, false, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String query1 = "SELECT COUNT(index) FROM " + data;
         String query2 = "SELECT " + FUNCTION_NAME + "(index, 0) FROM " + data;
         runQueryTestWith2Results(query1, query2);
@@ -228,7 +223,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianLongZeroNoiseScaleVsNormalCountWithNull()
     {
         int numRows = 1000;
-        String data = buildData(numRows, true);
+        String data = buildData(numRows, true, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String query1 = "SELECT COUNT(index) FROM " + data;
         String query2 = "SELECT " + FUNCTION_NAME + "(index, 0) FROM " + data;
         runQueryTestWith2Results(query1, query2);
@@ -240,7 +235,7 @@ public class TestNoisyCountGaussianAggregation
         // With 1 NULL row, COUNT(*) still count that row, but COUNT(col) does not count that row.
         // That is why noisy_count_gaussian(index, 0) + 1 = count(*)
         int numRows = 100;
-        String data = buildData(numRows, true);
+        String data = buildData(numRows, true, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String query1 = "SELECT COUNT(*) FROM " + data;
         String columnName = buildColumnName(StandardTypes.BIGINT);
         String query2 = "SELECT " + FUNCTION_NAME + "(" + columnName + ", 0) + 1 FROM " + data;
@@ -251,7 +246,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianNoInputRowsWithoutGroupBy()
     {
         int numRows = 100;
-        String data = buildData(numRows, true);
+        String data = buildData(numRows, true, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String columnName = buildColumnName(StandardTypes.BIGINT);
         String query = "SELECT " + FUNCTION_NAME + "(" + columnName + ", 0) + 1 FROM " + data
                 + " WHERE false";
@@ -265,7 +260,7 @@ public class TestNoisyCountGaussianAggregation
     public void testNoisyCountGaussianNoInputRowsWithGroupBy()
     {
         int numRows = 100;
-        String data = buildData(numRows, true);
+        String data = buildData(numRows, true, Arrays.asList(StandardTypes.BIGINT, StandardTypes.VARCHAR));
         String columnName = buildColumnName(StandardTypes.BIGINT);
         String query = "SELECT " + FUNCTION_NAME + "(" + columnName + ", 0) + 1 FROM " + data
                 + " WHERE false GROUP BY " + columnName;
